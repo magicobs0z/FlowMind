@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { useTabStore, useWorkspaceStore } from '../../store'
 import { workspaceApi } from '../../services/api'
+import SettingsPage from './SettingsPage'
 
 export default function EditorArea() {
   const { tabs, activeTabId, updateTabContent, markTabDirty } = useTabStore()
@@ -60,25 +61,29 @@ export default function EditorArea() {
           多智能体协作开发平台。打开一个项目开始工作，或使用 AI 助手获取帮助。
         </p>
         <div className="grid grid-cols-2 gap-3 text-left">
-          <div className="p-3 rounded-lg bg-gray-50 border border-gray-100">
+          <div className="p-3 rounded-lg bg-gray-50" style={{ border: '1px solid #f0f0f0' }}>
             <p className="text-xs font-medium text-gray-700 mb-1">打开项目</p>
             <p className="text-[11px] text-gray-400">从文件浏览器加载本地项目</p>
           </div>
-          <div className="p-3 rounded-lg bg-gray-50 border border-gray-100">
+          <div className="p-3 rounded-lg bg-gray-50" style={{ border: '1px solid #f0f0f0' }}>
             <p className="text-xs font-medium text-gray-700 mb-1">AI 助手</p>
             <p className="text-[11px] text-gray-400">使用智能助手编写和优化代码</p>
           </div>
-          <div className="p-3 rounded-lg bg-gray-50 border border-gray-100">
+          <div className="p-3 rounded-lg bg-gray-50" style={{ border: '1px solid #f0f0f0' }}>
             <p className="text-xs font-medium text-gray-700 mb-1">蓝图编排</p>
             <p className="text-[11px] text-gray-400">可视化设计和执行工作流</p>
           </div>
-          <div className="p-3 rounded-lg bg-gray-50 border border-gray-100">
+          <div className="p-3 rounded-lg bg-gray-50" style={{ border: '1px solid #f0f0f0' }}>
             <p className="text-xs font-medium text-gray-700 mb-1">DAG 管理</p>
             <p className="text-[11px] text-gray-400">管理任务依赖和执行状态</p>
           </div>
         </div>
       </div>
     )
+  }
+
+  if (activeTab.type === 'settings') {
+    return <SettingsPage />
   }
 
   if (activeTab.type === 'file') {

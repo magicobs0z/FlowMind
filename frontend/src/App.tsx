@@ -1,5 +1,5 @@
-import { PanelRightOpen, PanelBottomOpen } from 'lucide-react'
-import { useLayoutStore } from './store'
+import { Settings, User, PanelRightOpen, PanelBottomOpen } from 'lucide-react'
+import { useLayoutStore, useTabStore } from './store'
 import ResizablePanel from './components/layout/ResizablePanel'
 import ConversationList from './components/layout/ConversationList'
 import ChatPanel from './components/layout/ChatPanel'
@@ -25,49 +25,72 @@ function App() {
     toggleBottom,
   } = useLayoutStore()
 
+  const { openTab } = useTabStore()
+
+  const handleOpenSettings = () => {
+    openTab({ id: 'settings', type: 'settings', title: '设置' })
+  }
+
   return (
     <div className="flex flex-col h-screen bg-[var(--flowmind-bg)] overflow-hidden">
-      {/* 右上角悬浮控制按钮：面板折叠时显示展开入口 */}
-      <div className="fixed top-1 right-2 z-50 flex items-center gap-1">
+      {/* 右上角悬浮控制按钮：面板折叠时显示展开入口，距右侧 30px */}
+      <div className="fixed top-1 z-50 flex items-center gap-1" style={{ right: '30px' }}>
         {rightCollapsed && (
           <button
             onClick={toggleRight}
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--flowmind-primary)]/10 text-[var(--flowmind-primary)] text-[11px] hover:bg-[var(--flowmind-primary)]/20 transition-colors"
+            className="p-1.5 rounded-md bg-[var(--flowmind-primary)]/10 text-[var(--flowmind-primary)] hover:bg-[var(--flowmind-primary)]/20 transition-colors"
             title="展开右侧面板"
           >
-            <PanelRightOpen size={12} />
-            <span>面板</span>
+            <PanelRightOpen size={14} />
           </button>
         )}
         {bottomCollapsed && (
           <button
             onClick={toggleBottom}
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--flowmind-primary)]/10 text-[var(--flowmind-primary)] text-[11px] hover:bg-[var(--flowmind-primary)]/20 transition-colors"
+            className="p-1.5 rounded-md bg-[var(--flowmind-primary)]/10 text-[var(--flowmind-primary)] hover:bg-[var(--flowmind-primary)]/20 transition-colors"
             title="展开时间轴"
           >
-            <PanelBottomOpen size={12} />
-            <span>时间轴</span>
+            <PanelBottomOpen size={14} />
           </button>
         )}
       </div>
 
       {/* 主体区域：左 + 中 + 右 */}
       <div className="flex flex-1 overflow-hidden">
-        {/* 左侧：对话管理 + 聊天（聊天不可折叠，对话管理可折叠向左收起） */}
+        {/* 左侧：对话管理（可折叠向左收起）+ 聊天面板（不可折叠） */}
         <ResizablePanel
           direction="horizontal"
           size={leftWidth}
-          minSize={200}
-          maxSize={500}
+          minSize={260}
+          maxSize={600}
           onResize={setLeftWidth}
           onCollapse={toggleLeft}
           collapsed={leftCollapsed}
           collapseDirection="left"
-          className="border-r"
         >
           <div className="flex h-full">
             <ConversationList />
-            <ChatPanel />
+            <div className="flex-1 flex flex-col min-w-0 bg-white">
+              {/* 聊天面板上方工具栏：设置 + 用户按钮，无文字 */}
+              <div className="flex items-center justify-end gap-1 px-3 py-1.5">
+                <button
+                  onClick={handleOpenSettings}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+                  title="设置"
+                >
+                  <Settings size={15} />
+                </button>
+                <button
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+                  title="用户"
+                >
+                  <User size={15} />
+                </button>
+              </div>
+              <div className="flex-1 flex flex-col min-h-0">
+                <ChatPanel />
+              </div>
+            </div>
           </div>
         </ResizablePanel>
 
@@ -103,7 +126,6 @@ function App() {
           onCollapse={toggleRight}
           collapsed={rightCollapsed}
           collapseDirection="right"
-          className="border-l"
         >
           <RightPanel />
         </ResizablePanel>

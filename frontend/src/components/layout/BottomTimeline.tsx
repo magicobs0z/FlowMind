@@ -11,7 +11,7 @@ const eventConfig = {
   auto: { color: '#999999', bg: 'rgba(153, 153, 153, 0.1)', icon: Code, label: '脚本' },
 }
 
-/** 底部时间轴：完全可折叠，显示真实数据 */
+/** 底部时间轴：完全可折叠 */
 export default function BottomTimeline() {
   const { timelineEvents, currentWorkspace } = useWorkspaceStore()
   const [selectedEvent, setSelectedEvent] = useState<TimelineEvent | null>(null)
@@ -37,7 +37,7 @@ export default function BottomTimeline() {
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--flowmind-layer)' }}>
       {/* 头部栏 */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b" style={{ borderColor: 'var(--flowmind-border)', background: 'white' }}>
+      <div className="flex items-center justify-between px-3 py-1.5" style={{ background: 'white' }}>
         <div className="flex items-center gap-2">
           <GitCommit size={14} className="text-gray-500" />
           <span className="text-xs font-medium text-gray-700">时间轴</span>
@@ -108,7 +108,7 @@ export default function BottomTimeline() {
 
         {/* 详情面板 */}
         {selectedEvent && (
-          <div className="w-56 border-l p-3 overflow-y-auto bg-white flex-shrink-0" style={{ borderColor: 'var(--flowmind-border)' }}>
+          <div className="w-56 p-3 overflow-y-auto bg-white flex-shrink-0">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <div

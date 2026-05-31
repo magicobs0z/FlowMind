@@ -12,7 +12,7 @@ export default function ConversationList() {
 
   if (leftCollapsed) {
     return (
-      <div className="w-10 flex-shrink-0 flex flex-col items-center py-3 border-r" style={{ borderColor: 'var(--flowmind-border)', background: 'var(--flowmind-bg)' }}>
+      <div className="w-10 flex-shrink-0 flex flex-col items-center py-3" style={{ background: 'var(--flowmind-bg)' }}>
         <button
           onClick={toggleLeft}
           className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 mb-3"
@@ -32,8 +32,8 @@ export default function ConversationList() {
   }
 
   return (
-    <div className="w-52 flex-shrink-0 flex flex-col border-r" style={{ borderColor: 'var(--flowmind-border)', background: 'var(--flowmind-bg)' }}>
-      <div className="flex items-center justify-between px-3 py-2.5 border-b" style={{ borderColor: 'var(--flowmind-border)' }}>
+    <div className="w-52 flex-shrink-0 flex flex-col" style={{ background: 'var(--flowmind-bg)' }}>
+      <div className="flex items-center justify-between px-3 py-2.5">
         <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">对话</span>
         <div className="flex items-center gap-1">
           <button

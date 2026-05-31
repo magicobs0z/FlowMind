@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  FolderOpen, ChevronRight, ChevronDown, RefreshCw, Search,
+  FolderOpen, ChevronRight, ChevronDown, Search,
   PanelRightClose, PanelRightOpen, ListTodo, Brain, GitBranch,
-  CheckCircle2, Circle, Clock, AlertCircle, Bot
+  CheckCircle2, Circle, Clock, Bot
 } from 'lucide-react'
 import { useFileStore, useTabStore, useWorkspaceStore, useLayoutStore } from '../../store'
 import { workspaceApi, agentApi } from '../../services/api'
@@ -67,7 +67,6 @@ function ExplorerPanel() {
   const { currentWorkspace } = useWorkspaceStore()
 
   const loadWorkspace = useCallback(async () => {
-    const wsId = currentWorkspace?.id || 'default'
     const wsPath = currentWorkspace?.path || 'd:\\AI\\FlowMind\\flowmind'
     try {
       const response = await workspaceApi.open(wsPath)
@@ -138,7 +137,6 @@ function TodoPanel() {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto p-3 space-y-4">
-      {/* 任务进度 */}
       <div>
         <h4 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
           <ListTodo size={13} /> 任务进度
@@ -155,7 +153,6 @@ function TodoPanel() {
         </div>
       </div>
 
-      {/* 智能体状态 */}
       <div>
         <h4 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
           <Bot size={13} /> 智能体状态
@@ -211,7 +208,7 @@ function ContextPanel() {
 
 /** Git 管理面板 */
 function GitPanel() {
-  const [gitInfo, setGitInfo] = useState<{ branch: string; changes: string[]; staged: string[] }>({
+  const [gitInfo] = useState<{ branch: string; changes: string[]; staged: string[] }>({
     branch: 'main',
     changes: [],
     staged: [],
@@ -243,7 +240,7 @@ function GitPanel() {
         )}
       </div>
 
-      <div className="border-t pt-2" style={{ borderColor: 'var(--flowmind-border)' }}>
+      <div className="pt-2">
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -259,7 +256,7 @@ function GitPanel() {
   )
 }
 
-/** 右侧面板：带标签切换的复合面板 */
+/** 右侧面板：带标签切换的复合面板，仅图标导航 */
 export default function RightPanel() {
   const { rightCollapsed, toggleRight } = useLayoutStore()
   const [activeTab, setActiveTab] = useState<RightTab>('explorer')
@@ -274,8 +271,7 @@ export default function RightPanel() {
   if (rightCollapsed) {
     return (
       <div
-        className="w-8 flex-shrink-0 flex flex-col items-center py-3 border-l cursor-pointer hover:bg-gray-50"
-        style={{ borderColor: 'var(--flowmind-border)' }}
+        className="w-8 flex-shrink-0 flex flex-col items-center py-3 cursor-pointer hover:bg-gray-50"
         onClick={toggleRight}
         title="展开面板"
       >
@@ -286,21 +282,21 @@ export default function RightPanel() {
 
   return (
     <div className="flex flex-col h-full bg-[var(--flowmind-bg)]">
-      {/* 标签栏 */}
-      <div className="flex items-center border-b justify-between" style={{ borderColor: 'var(--flowmind-border)' }}>
+      {/* 图标导航栏：不显示文字 */}
+      <div className="flex items-center justify-between">
         <div className="flex">
           {tabItems.map(({ key, label, Icon }) => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
-              className={`flex items-center gap-1 px-2.5 py-2 text-[11px] transition-colors border-b-2 ${
+              className={`flex items-center justify-center px-3 py-2 transition-colors border-b-2 ${
                 activeTab === key
                   ? 'border-[var(--flowmind-primary)] text-[var(--flowmind-primary)]'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
+              title={label}
             >
-              <Icon size={13} />
-              <span className="hidden xl:inline">{label}</span>
+              <Icon size={15} />
             </button>
           ))}
         </div>

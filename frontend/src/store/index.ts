@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 export interface Tab {
   id: string
-  type: 'file' | 'blueprint' | 'dag' | 'diff' | 'welcome'
+  type: 'file' | 'blueprint' | 'dag' | 'diff' | 'welcome' | 'settings'
   title: string
   path?: string
   content?: string
@@ -100,13 +100,13 @@ interface WorkspaceState {
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
-  leftWidth: 320,
+  leftWidth: 380,
   rightWidth: 280,
   bottomHeight: 200,
   leftCollapsed: false,
   rightCollapsed: false,
   bottomCollapsed: false,
-  setLeftWidth: (w) => set({ leftWidth: Math.max(200, Math.min(500, w)) }),
+  setLeftWidth: (w) => set({ leftWidth: Math.max(260, Math.min(600, w)) }),
   setRightWidth: (w) => set({ rightWidth: Math.max(200, Math.min(400, w)) }),
   setBottomHeight: (h) => set({ bottomHeight: Math.max(100, Math.min(400, h)) }),
   toggleLeft: () => set((s) => ({ leftCollapsed: !s.leftCollapsed })),

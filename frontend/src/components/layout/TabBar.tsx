@@ -1,4 +1,4 @@
-import { X, FileCode, Workflow, GitCompare, Home } from 'lucide-react'
+import { X, FileCode, Workflow, GitCompare, Home, Settings } from 'lucide-react'
 import { useTabStore } from '../../store'
 
 const tabIcons: Record<string, typeof FileCode> = {
@@ -7,13 +7,14 @@ const tabIcons: Record<string, typeof FileCode> = {
   dag: Workflow,
   diff: GitCompare,
   welcome: Home,
+  settings: Settings,
 }
 
 export default function TabBar() {
   const { tabs, activeTabId, setActiveTab, closeTab } = useTabStore()
 
   return (
-    <div className="flex items-center border-b overflow-x-auto" style={{ borderColor: 'var(--flowmind-border)', background: 'var(--flowmind-bg)' }}>
+    <div className="flex items-center overflow-x-auto" style={{ background: 'var(--flowmind-bg)' }}>
       {tabs.map((tab) => {
         const Icon = tabIcons[tab.type] || FileCode
         const isActive = activeTabId === tab.id
@@ -22,17 +23,16 @@ export default function TabBar() {
           <div
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`group flex items-center gap-1.5 px-3 py-2 text-xs cursor-pointer border-r transition-colors min-w-fit ${
+            className={`group flex items-center gap-1.5 px-3 py-2 text-xs cursor-pointer transition-colors min-w-fit ${
               isActive
-                ? 'bg-white text-[var(--flowmind-text)] border-t-2 border-t-[var(--flowmind-primary)]'
-                : 'text-gray-500 hover:bg-gray-50 border-t-2 border-t-transparent'
+                ? 'bg-white text-[var(--flowmind-text)]'
+                : 'text-gray-500 hover:bg-gray-50'
             }`}
-            style={{ borderColor: 'var(--flowmind-border)' }}
           >
             <Icon size={13} />
             <span className="truncate max-w-[120px]">{tab.title}</span>
             {tab.isDirty && <span className="text-[var(--flowmind-primary)]">●</span>}
-            {tab.type !== 'welcome' && (
+            {tab.type !== 'welcome' && tab.type !== 'settings' && (
               <button
                 onClick={(e) => {
                   e.stopPropagation()

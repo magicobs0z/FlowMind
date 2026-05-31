@@ -11,7 +11,6 @@ interface ResizablePanelProps {
   collapseDirection?: 'left' | 'right' | 'top' | 'bottom'
   className?: string
   children: ReactNode
-  resizerClassName?: string
 }
 
 export default function ResizablePanel({
@@ -25,7 +24,6 @@ export default function ResizablePanel({
   collapseDirection = 'right',
   className = '',
   children,
-  resizerClassName = '',
 }: ResizablePanelProps) {
   const isDragging = useRef(false)
   const startPos = useRef(0)
@@ -73,12 +71,11 @@ export default function ResizablePanel({
   if (collapsed) {
     return (
       <div
-        className={`flex-shrink-0 flex items-center justify-center bg-[var(--flowmind-layer)] border-[var(--flowmind-border)] ${
+        className={`flex-shrink-0 flex items-center justify-center bg-[var(--flowmind-layer)] ${
           collapseDirection === 'left' || collapseDirection === 'right'
-            ? 'w-8 border-r'
-            : 'h-8 border-t'
+            ? 'w-8'
+            : 'h-8'
         } ${className}`}
-        style={{ borderColor: 'var(--flowmind-border)' }}
       >
         <button
           onClick={onCollapse}
@@ -106,11 +103,11 @@ export default function ResizablePanel({
         <div
           className={`flex-shrink-0 ${
             isHorizontal
-              ? `w-1 cursor-col-resize hover:bg-[var(--flowmind-primary)] ${resizerClassName}`
-              : `h-1 cursor-row-resize hover:bg-[var(--flowmind-primary)] ${resizerClassName}`
+              ? 'w-[3px] cursor-col-resize hover:bg-[var(--flowmind-primary)]'
+              : 'h-[3px] cursor-row-resize hover:bg-[var(--flowmind-primary)]'
           } transition-colors`}
           onMouseDown={handleMouseDown}
-          style={{ background: 'var(--flowmind-border)' }}
+          style={{ background: 'transparent' }}
         />
       )}
 
@@ -130,7 +127,7 @@ export default function ResizablePanel({
               : isHorizontal
                 ? 'left-0'
                 : 'top-0'
-          } z-10 opacity-0 hover:opacity-100 transition-opacity bg-[var(--flowmind-layer)] border border-[var(--flowmind-border)] rounded cursor-pointer`}
+          } z-10 opacity-0 hover:opacity-100 transition-opacity bg-[var(--flowmind-layer)] rounded cursor-pointer`}
           title="折叠"
         >
           {collapseDirection === 'left' && <ChevronLeftIcon />}
@@ -144,11 +141,11 @@ export default function ResizablePanel({
         <div
           className={`flex-shrink-0 ${
             isHorizontal
-              ? `w-1 cursor-col-resize hover:bg-[var(--flowmind-primary)] ${resizerClassName}`
-              : `h-1 cursor-row-resize hover:bg-[var(--flowmind-primary)] ${resizerClassName}`
+              ? 'w-[3px] cursor-col-resize hover:bg-[var(--flowmind-primary)]'
+              : 'h-[3px] cursor-row-resize hover:bg-[var(--flowmind-primary)]'
           } transition-colors`}
           onMouseDown={handleMouseDown}
-          style={{ background: 'var(--flowmind-border)' }}
+          style={{ background: 'transparent' }}
         />
       )}
     </div>

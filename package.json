@@ -1,0 +1,19 @@
+{
+  "name": "flowmind",
+  "version": "0.1.0",
+  "description": "FlowMind - Multi-Agent Blueprint Development Platform",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:electron": "cd electron && npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron\"",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "build:electron": "cd electron && npm run build",
+    "build": "npm run build:frontend && npm run build:backend && npm run build:electron",
+    "electron:build": "cd electron && npm run build:app"
+  },
+  "devDependencies": {
+    "localtunnel": "^2.0.2"
+  }
+}

@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+:root {
+  --flowmind-primary: #0099FF;
+  --flowmind-primary-hover: #0077CC;
+  --flowmind-primary-active: #005599;
+  --flowmind-bg: #FFFFFF;
+  --flowmind-layer: #F4F4F4;
+  --flowmind-border: #E5E5E5;
+  --flowmind-text: #1A1A1A;
+  --flowmind-text-secondary: #666666;
+  --flowmind-text-muted: #999999;
+  --flowmind-danger: #FF4D4F;
+  --flowmind-success: #52C41A;
+  --flowmind-warning: #FAAD14;
+
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--flowmind-text);
+  background: var(--flowmind-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--flowmind-bg);
+  overflow: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  background: var(--flowmind-bg);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

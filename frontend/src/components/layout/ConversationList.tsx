@@ -4,17 +4,17 @@ import { useChatStore, useLayoutStore } from '../../store'
 
 export default function ConversationList() {
   const { conversations, currentConversationId, createConversation, setCurrentConversation } = useChatStore()
-  const { leftCollapsed, toggleLeft } = useLayoutStore()
+  const { conversationPanelOpen, toggleConversationPanel } = useLayoutStore()
 
   const handleNewConversation = useCallback(() => {
     createConversation()
   }, [createConversation])
 
-  if (leftCollapsed) {
+  if (!conversationPanelOpen) {
     return (
       <div className="w-10 flex-shrink-0 flex flex-col items-center py-3" style={{ background: 'var(--flowmind-bg)' }}>
         <button
-          onClick={toggleLeft}
+          onClick={toggleConversationPanel}
           className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 mb-3"
           title="展开对话列表"
         >
@@ -44,7 +44,7 @@ export default function ConversationList() {
             <Plus size={14} />
           </button>
           <button
-            onClick={toggleLeft}
+            onClick={toggleConversationPanel}
             className="p-1 rounded hover:bg-gray-100 text-gray-500 transition-colors"
             title="收起"
           >

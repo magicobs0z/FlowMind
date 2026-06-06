@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import Editor from '@monaco-editor/react'
-import { useTabStore, useWorkspaceStore } from '../../store'
+import { useTabStore } from '../../store'
 import { workspaceApi } from '../../services/api'
 import SettingsPage from './SettingsPage'
+import BlueprintEditor from './BlueprintEditor'
+import TerminalPanel from './TerminalPanel'
 
 export default function EditorArea() {
   const { tabs, activeTabId, updateTabContent, markTabDirty } = useTabStore()
-  const { currentWorkspace } = useWorkspaceStore()
   const [isLoading, setIsLoading] = useState(false)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
@@ -14,8 +15,7 @@ export default function EditorArea() {
   useEffect(() => {
     if (activeTab?.type === 'file' && activeTab.path && !activeTab.content) {
       setIsLoading(true)
-      const workspaceId = currentWorkspace?.id || 'default'
-      workspaceApi.getFileContent(workspaceId, activeTab.path)
+      workspaceApi.readFile(activeTab.path)
         .then((response) => {
           if (response.success) {
             updateTabContent(activeTab.id, response.data.content)
@@ -26,7 +26,7 @@ export default function EditorArea() {
         })
         .finally(() => setIsLoading(false))
     }
-  }, [activeTab, currentWorkspace, updateTabContent])
+  }, [activeTab, updateTabContent])
 
   const handleEditorChange = useCallback(
     (value: string | undefined) => {
@@ -126,14 +126,7 @@ export default function EditorArea() {
   }
 
   if (activeTab.type === 'blueprint') {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <p className="text-sm text-gray-500 mb-2">蓝图编辑器</p>
-          <p className="text-xs text-gray-400">使用 React Flow 可视化编辑蓝图</p>
-        </div>
-      </div>
-    )
+    return <BlueprintEditor blueprintId={activeTab.id} />
   }
 
   if (activeTab.type === 'dag') {
@@ -156,6 +149,10 @@ export default function EditorArea() {
         </div>
       </div>
     )
+  }
+
+  if (activeTab.type === 'terminal') {
+    return <TerminalPanel />
   }
 
   return (

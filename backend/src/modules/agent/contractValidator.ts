@@ -31,7 +31,8 @@ class ContractValidator {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    if (!contract.type || !Object.values(['openapi', 'typescript', 'graphql', 'custom']).includes(contract.type)) {
+    const validTypes: string[] = ['openapi', 'typescript', 'graphql', 'custom'];
+    if (!contract.type || !validTypes.includes(contract.type)) {
       errors.push('Invalid contract type');
     }
 

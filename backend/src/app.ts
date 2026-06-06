@@ -6,12 +6,13 @@ import rateLimit from 'express-rate-limit';
 import { logger } from './utils/logger';
 import { errorHandler } from './core/error/handler';
 import { FlowMindError } from './core/error';
-import { workspaceRoutes } from './modules/workspace/routes';
+import { workspaceRouter } from './modules/workspace/routes';
 import { dagRoutes } from './modules/dag/routes';
 import { agentRoutes } from './modules/agent/routes';
 import { blueprintRoutes } from './modules/blueprint/routes';
 import { chatRoutes } from './modules/chat/routes';
 import { timelineRoutes } from './modules/timeline/routes';
+import { modelRoutes } from './modules/model/routes';
 
 const app = express();
 
@@ -33,12 +34,13 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.use('/api/v1/workspace', workspaceRoutes);
+app.use('/api/v1/workspace', workspaceRouter);
 app.use('/api/v1/dag', dagRoutes);
 app.use('/api/v1/agents', agentRoutes);
 app.use('/api/v1/blueprints', blueprintRoutes);
 app.use('/api/v1/chat', chatRoutes);
 app.use('/api/v1/git/timeline', timelineRoutes);
+app.use('/api/v1/models', modelRoutes);
 
 app.use((req, _res, next) => {
   const err = new FlowMindError(

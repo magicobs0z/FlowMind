@@ -1,4 +1,4 @@
-export type AgentType = 'product_manager' | 'project_manager' | 'engineer' | 'tester' | 'reviewer';
+export type AgentType = 'lead' | 'sub_lead' | 'coder' | 'reviewer' | 'tester' | 'explorer' | 'custom';
 export type AgentStatus = 'idle' | 'busy' | 'error' | 'offline';
 export type RequestType = 'task_assignment' | 'dependency_request' | 'collaboration_request' | 'status_update';
 export type ContractType = 'openapi' | 'typescript' | 'graphql' | 'custom';

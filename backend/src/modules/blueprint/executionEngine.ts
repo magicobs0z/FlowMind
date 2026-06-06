@@ -1,368 +1,285 @@
-import {
-  ExecutionBlueprint,
-  BlueprintNode,
-  HumanGateway,
-} from './types';
+import { ExecutionBlueprint, BlueprintNode } from './types';
 import { blueprintRepository } from './repository';
-import { ERROR_CODES } from '../../constants';
-import { logger } from '../../utils/logger';
+import { getExecutor } from './nodeExecutors';
+import WebSocket from 'ws';
 
-class FlowMindError extends Error {
-  constructor(
-    public code: string,
-    message: string,
-    public statusCode: number = 400
-  ) {
-    super(message);
-    this.name = 'FlowMindError';
-  }
+interface ExecutionContext {
+  executionId: string;
+  blueprintId: string;
+  currentNodeId: string;
+  variables: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  inputs: Record<string, unknown>;
 }
 
-type ExecutionCallback = (
-  nodeId: string,
-  node: BlueprintNode
-) => Promise<Record<string, unknown> | void>;
-
 export class ExecutionEngine {
-  private blueprint: ExecutionBlueprint;
-  private onExecuteNode?: ExecutionCallback;
+  private execution: ExecutionBlueprint;
+  private wsClients: Set<WebSocket> = new Set();
+  private breakpoints: Set<string> = new Set();
+  private paused: boolean = false;
+  private stepMode: boolean = false;
 
-  constructor(blueprintId: string, callback?: ExecutionCallback) {
-    const blueprint = blueprintRepository.findExecution(blueprintId);
-    if (!blueprint) {
-      throw new FlowMindError(
-        ERROR_CODES.BLUEPRINT_NOT_FOUND,
-        `Execution blueprint '${blueprintId}' not found`,
-        404
-      );
+  constructor(executionId: string) {
+    const execution = blueprintRepository.findExecution(executionId);
+    if (!execution) {
+      throw new Error(`Execution blueprint '${executionId}' not found`);
     }
-
-    this.blueprint = blueprint;
-    this.onExecuteNode = callback;
-    logger.info({ blueprintId }, 'Execution engine initialized');
+    this.execution = execution;
   }
 
-  static fromBlueprint(blueprintId: string, callback?: ExecutionCallback): ExecutionEngine {
-    return new ExecutionEngine(blueprintId, callback);
+  addWsClient(ws: WebSocket): void {
+    this.wsClients.add(ws);
+    ws.on('close', () => this.wsClients.delete(ws));
+  }
+
+  private broadcast(event: Record<string, unknown>): void {
+    const message = JSON.stringify(event);
+    this.wsClients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    });
   }
 
   async execute(): Promise<void> {
-    if (this.blueprint.status === 'running') {
-      throw new FlowMindError(
-        ERROR_CODES.BLUEPRINT_INVALID,
-        'Blueprint is already running'
-      );
-    }
-
-    if (this.blueprint.status === 'completed') {
-      throw new FlowMindError(
-        ERROR_CODES.BLUEPRINT_INVALID,
-        'Blueprint is already completed'
-      );
-    }
-
-    this.blueprint.status = 'running';
-    this.blueprint.startedAt = new Date().toISOString();
+    this.execution.status = 'running';
+    this.execution.startedAt = new Date().toISOString();
     this.save();
-    logger.info({ blueprintId: this.blueprint.id }, 'Execution started');
 
-    let hasPending = true;
-    while (hasPending) {
-      const readyNodes = this.getNextExecutableNodes();
-      if (readyNodes.length === 0) {
-        const pending = this.blueprint.nodes.filter((n) => n.status === 'pending');
-        if (pending.length > 0) {
-          pending.forEach((n) => {
-            n.status = 'skipped';
-            n.error = 'Dependencies not met';
-          });
-          this.save();
-        }
-        hasPending = false;
-        continue;
-      }
-
-      for (const node of readyNodes) {
-        if (node.type === 'gateway') {
-          const gateway = this.blueprint.humanGateways.find(
-            (g) => g.nodeId === node.id
-          );
-          if (gateway && gateway.required) {
-            this.triggerHumanGateway(gateway);
-            hasPending = false;
-            break;
-          }
-        }
-
-        await this.executeNode(node);
-      }
-
-      const hasFailed = this.blueprint.nodes.some((n) => n.status === 'failed');
-      if (hasFailed) {
-        this.propagateFailure();
-        break;
-      }
-
-      if (this.isComplete()) {
-        hasPending = false;
-      }
-    }
-
-    this.finalize();
-  }
-
-  async executeNode(node: BlueprintNode): Promise<void> {
-    node.status = 'running';
-    this.save();
-    logger.info({ blueprintId: this.blueprint.id, nodeId: node.id }, 'Node execution started');
+    this.broadcast({
+      type: 'execution.started',
+      executionId: this.execution.id,
+    });
 
     try {
-      let result: Record<string, unknown> | void;
-      if (this.onExecuteNode) {
-        result = await this.onExecuteNode(node.id, node);
-      } else {
-        result = {};
+      while (true) {
+        if (this.paused) {
+          await this.waitForResume();
+        }
+
+        const readyNodes = this.getReadyNodes();
+        if (readyNodes.length === 0) {
+          break;
+        }
+
+        for (const node of readyNodes) {
+          if (this.breakpoints.has(node.id)) {
+            this.paused = true;
+            this.broadcast({
+              type: 'execution.paused',
+              executionId: this.execution.id,
+              nodeId: node.id,
+            });
+            await this.waitForResume();
+          }
+
+          await this.executeNode(node);
+
+          if (this.stepMode) {
+            this.paused = true;
+            this.stepMode = false;
+          }
+        }
       }
 
-      node.status = 'completed';
-      if (result) {
-        node.output = { ...node.output, ...result };
-      }
+      this.finalize();
+    } catch (error) {
+      this.execution.status = 'failed';
+      this.broadcast({
+        type: 'execution.failed',
+        executionId: this.execution.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
 
-      this.updateStage();
+  private async executeNode(node: BlueprintNode): Promise<void> {
+    node.status = 'running';
+    this.save();
+
+    this.broadcast({
+      type: 'node.started',
+      executionId: this.execution.id,
+      nodeId: node.id,
+    });
+
+    const executor = getExecutor(node.type);
+    if (!executor) {
+      node.status = 'failed';
+      node.error = `No executor found for node type: ${node.type}`;
       this.save();
-      logger.info({ blueprintId: this.blueprint.id, nodeId: node.id }, 'Node completed');
+      this.broadcast({
+        type: 'node.failed',
+        executionId: this.execution.id,
+        nodeId: node.id,
+        error: node.error,
+      });
+      return;
+    }
+
+    const context: ExecutionContext = {
+      executionId: this.execution.id,
+      blueprintId: this.execution.templateId,
+      currentNodeId: node.id,
+      variables: this.collectVariables(),
+      outputs: this.collectOutputs(),
+      inputs: this.collectInputs(node),
+    };
+
+    try {
+      const result = await executor.execute(node, context);
+
+      if (result.status === 'failed') {
+        node.status = 'failed';
+        node.error = result.error as string;
+        this.save();
+        this.broadcast({
+          type: 'node.failed',
+          executionId: this.execution.id,
+          nodeId: node.id,
+          error: node.error,
+        });
+      } else {
+        node.status = 'completed';
+        node.output = result;
+        this.save();
+        this.broadcast({
+          type: 'node.completed',
+          executionId: this.execution.id,
+          nodeId: node.id,
+          output: result,
+        });
+      }
     } catch (error) {
       node.status = 'failed';
       node.error = error instanceof Error ? error.message : 'Unknown error';
       this.save();
-      logger.error({ blueprintId: this.blueprint.id, nodeId: node.id, error }, 'Node failed');
+      this.broadcast({
+        type: 'node.failed',
+        executionId: this.execution.id,
+        nodeId: node.id,
+        error: node.error,
+      });
     }
   }
 
-  triggerHumanGateway(gateway: HumanGateway): void {
-    logger.info(
-      { gatewayId: gateway.id, nodeId: gateway.nodeId, gatewayType: gateway.type },
-      'Human gateway triggered'
-    );
-
-    const node = this.blueprint.nodes.find((n) => n.id === gateway.nodeId);
-    if (node) {
-      node.status = 'running';
-      this.save();
-    }
-  }
-
-  async resolveHumanGateway(gatewayId: string, approved: boolean, input?: Record<string, unknown>): Promise<void> {
-    const gateway = this.blueprint.humanGateways.find((g) => g.id === gatewayId);
-    if (!gateway) {
-      throw new FlowMindError(
-        ERROR_CODES.BLUEPRINT_INVALID,
-        `Human gateway '${gatewayId}' not found`,
-        404
-      );
-    }
-
-    const node = this.blueprint.nodes.find((n) => n.id === gateway.nodeId);
-    if (!node) {
-      throw new FlowMindError(
-        ERROR_CODES.BLUEPRINT_INVALID,
-        `Node '${gateway.nodeId}' not found for gateway`,
-        404
-      );
-    }
-
-    if (approved) {
-      node.status = 'completed';
-      if (input) {
-        node.output = { ...node.output, ...input };
-      }
-    } else {
-      node.status = 'failed';
-      node.error = 'Human gateway rejected';
-    }
-
-    this.save();
-    logger.info(
-      { gatewayId, approved, blueprintId: this.blueprint.id },
-      'Human gateway resolved'
-    );
-  }
-
-  pause(): void {
-    if (this.blueprint.status !== 'running') {
-      throw new FlowMindError(
-        ERROR_CODES.BLUEPRINT_INVALID,
-        `Cannot pause blueprint with status '${this.blueprint.status}'`
-      );
-    }
-
-    this.blueprint.status = 'paused';
-    this.save();
-    logger.info({ blueprintId: this.blueprint.id }, 'Execution paused');
-  }
-
-  async resume(): Promise<void> {
-    if (this.blueprint.status !== 'paused') {
-      throw new FlowMindError(
-        ERROR_CODES.BLUEPRINT_INVALID,
-        `Cannot resume blueprint with status '${this.blueprint.status}'`
-      );
-    }
-
-    this.blueprint.status = 'running';
-    this.save();
-    logger.info({ blueprintId: this.blueprint.id }, 'Execution resumed');
-
-    await this.execute();
-  }
-
-  cancel(): void {
-    if (
-      this.blueprint.status !== 'running' &&
-      this.blueprint.status !== 'paused'
-    ) {
-      throw new FlowMindError(
-        ERROR_CODES.BLUEPRINT_INVALID,
-        `Cannot cancel blueprint with status '${this.blueprint.status}'`
-      );
-    }
-
-    this.blueprint.status = 'cancelled';
-    this.blueprint.completedAt = new Date().toISOString();
-
-    this.blueprint.nodes.forEach((node) => {
-      if (node.status === 'pending' || node.status === 'running') {
-        node.status = 'skipped';
-        node.error = 'Blueprint cancelled';
-      }
-    });
-
-    this.save();
-    logger.info({ blueprintId: this.blueprint.id }, 'Execution cancelled');
-  }
-
-  getBlueprint(): ExecutionBlueprint {
-    return {
-      ...this.blueprint,
-      nodes: [...this.blueprint.nodes],
-      edges: [...this.blueprint.edges],
-      humanGateways: [...this.blueprint.humanGateways],
-    };
-  }
-
-  getPendingHumanGateways(): HumanGateway[] {
-    return this.blueprint.humanGateways.filter((gateway) => {
-      const node = this.blueprint.nodes.find((n) => n.id === gateway.nodeId);
-      return node && node.status === 'running' && gateway.required;
-    });
-  }
-
-  private getNextExecutableNodes(): BlueprintNode[] {
-    return this.blueprint.nodes.filter((node) => {
+  private getReadyNodes(): BlueprintNode[] {
+    return this.execution.nodes.filter((node) => {
       if (node.status !== 'pending') return false;
 
-      return node.dependencies.every((depId) => {
-        const depNode = this.blueprint.nodes.find((n) => n.id === depId);
-        if (!depNode) return true;
-        return depNode.status === 'completed' || depNode.status === 'skipped';
+      const incomingEdges = this.execution.edges.filter((e) => e.to === node.id);
+      if (incomingEdges.length === 0) return true;
+
+      return incomingEdges.every((edge) => {
+        const sourceNode = this.execution.nodes.find((n) => n.id === edge.from);
+        if (!sourceNode) return true;
+        return sourceNode.status === 'completed';
       });
     });
   }
 
-  private propagateFailure(): void {
-    const failedNodeIds = new Set<string>();
+  private collectVariables(): Record<string, unknown> {
+    const variables: Record<string, unknown> = {};
+    this.execution.nodes.forEach((node) => {
+      if (node.output && node.status === 'completed') {
+        Object.entries(node.output).forEach(([key, value]) => {
+          variables[`${node.id}_${key}`] = value;
+          variables[key] = value;
+        });
+      }
+    });
+    return variables;
+  }
 
-    this.blueprint.nodes.forEach((node) => {
-      if (node.status === 'failed') {
-        failedNodeIds.add(node.id);
+  private collectOutputs(): Record<string, unknown> {
+    const outputs: Record<string, unknown> = {};
+    this.execution.nodes.forEach((node) => {
+      if (node.output && node.status === 'completed') {
+        outputs[node.id] = node.output;
+      }
+    });
+    return outputs;
+  }
+
+  private collectInputs(node: BlueprintNode): Record<string, unknown> {
+    const inputs: Record<string, unknown> = {};
+    const incomingEdges = this.execution.edges.filter((e) => e.to === node.id);
+    
+    incomingEdges.forEach((edge) => {
+      const sourceNode = this.execution.nodes.find((n) => n.id === edge.from);
+      if (sourceNode?.output) {
+        inputs[sourceNode.id] = sourceNode.output;
       }
     });
 
-    let changed = true;
-    while (changed) {
-      changed = false;
-      this.blueprint.nodes.forEach((node) => {
-        if (node.status !== 'pending') return;
-
-        const hasFailedDep = node.dependencies.some((depId) =>
-          failedNodeIds.has(depId)
-        );
-        if (hasFailedDep) {
-          node.status = 'failed';
-          node.error = `Dependency failed`;
-          failedNodeIds.add(node.id);
-          changed = true;
-        }
-      });
-    }
-
-    this.save();
-  }
-
-  private isComplete(): boolean {
-    return this.blueprint.nodes.every(
-      (n) =>
-        n.status === 'completed' ||
-        n.status === 'failed' ||
-        n.status === 'skipped'
-    );
+    return inputs;
   }
 
   private finalize(): void {
-    const now = new Date().toISOString();
-    this.blueprint.completedAt = now;
-
-    const hasFailed = this.blueprint.nodes.some((n) => n.status === 'failed');
-    if (hasFailed) {
-      this.blueprint.status = 'failed';
-    } else {
-      this.blueprint.status = 'completed';
-    }
-
-    this.blueprint.progress = this.calculateProgress();
+    const hasFailed = this.execution.nodes.some((n) => n.status === 'failed');
+    this.execution.status = hasFailed ? 'failed' : 'completed';
+    this.execution.completedAt = new Date().toISOString();
     this.save();
-    logger.info(
-      { blueprintId: this.blueprint.id, status: this.blueprint.status },
-      'Execution finalized'
-    );
-  }
 
-  private calculateProgress(): number {
-    const total = this.blueprint.nodes.length;
-    if (total === 0) return 100;
-
-    const completed = this.blueprint.nodes.filter(
-      (n) => n.status === 'completed' || n.status === 'skipped'
-    ).length;
-
-    return Math.round((completed / total) * 100);
-  }
-
-  private updateStage(): void {
-    const stages = (this.blueprint as any).stages;
-    if (!stages || stages.length === 0) return;
-
-    const completedCount = this.blueprint.nodes.filter(
-      (n) => n.status === 'completed' || n.status === 'skipped'
-    ).length;
-    const totalNodes = this.blueprint.nodes.length;
-    const ratio = completedCount / totalNodes;
-
-    let currentStageIndex = 0;
-    for (let i = stages.length - 1; i >= 0; i--) {
-      const stage = stages[i];
-      const stageThreshold = stage.order / stages.length;
-      if (ratio >= stageThreshold) {
-        currentStageIndex = i;
-        break;
-      }
-    }
-
-    this.blueprint.currentStage = stages[currentStageIndex].name;
+    this.broadcast({
+      type: hasFailed ? 'execution.failed' : 'execution.completed',
+      executionId: this.execution.id,
+    });
   }
 
   private save(): void {
-    blueprintRepository.saveExecution(this.blueprint);
+    blueprintRepository.saveExecution(this.execution);
+  }
+
+  pause(): void {
+    this.paused = true;
+    this.broadcast({
+      type: 'execution.paused',
+      executionId: this.execution.id,
+    });
+  }
+
+  resume(): void {
+    this.paused = false;
+    this.broadcast({
+      type: 'execution.resumed',
+      executionId: this.execution.id,
+    });
+  }
+
+  step(): void {
+    this.stepMode = true;
+    this.paused = false;
+  }
+
+  stop(): void {
+    this.execution.status = 'cancelled';
+    this.execution.completedAt = new Date().toISOString();
+    this.save();
+    this.broadcast({
+      type: 'execution.stopped',
+      executionId: this.execution.id,
+    });
+  }
+
+  setBreakpoint(nodeId: string): void {
+    this.breakpoints.add(nodeId);
+  }
+
+  removeBreakpoint(nodeId: string): void {
+    this.breakpoints.delete(nodeId);
+  }
+
+  private waitForResume(): Promise<void> {
+    return new Promise((resolve) => {
+      const check = () => {
+        if (!this.paused) {
+          resolve();
+        } else {
+          setTimeout(check, 100);
+        }
+      };
+      check();
+    });
   }
 }

@@ -16,6 +16,8 @@ api.interceptors.response.use(
   }
 )
 
+export default api
+
 export interface WorkspaceSummary {
   id: string
   path: string
@@ -97,17 +99,35 @@ export interface TimelineEvent {
 }
 
 export const workspaceApi = {
-  open: (path: string): Promise<{ success: boolean; data: WorkspaceSummary }> =>
+  open: (path: string): Promise<{ success: boolean; data: WorkspaceSummary; error?: string }> =>
     api.post('/workspace/open', { path }),
 
-  get: (id: string): Promise<{ success: boolean; data: WorkspaceSummary }> =>
+  get: (id: string): Promise<{ success: boolean; data: WorkspaceSummary; error?: string }> =>
     api.get(`/workspace/${id}`),
 
-  scan: (id: string): Promise<{ success: boolean; data: WorkspaceSummary }> =>
-    api.post(`/workspace/${id}/scan`),
+  getProjectSummary: (): Promise<{ success: boolean; data: WorkspaceSummary; error?: string }> =>
+    api.get('/workspace/summary'),
 
-  getFileContent: (workspaceId: string, filePath: string): Promise<{ success: boolean; data: { content: string; language: string } }> =>
-    api.get(`/workspace/${workspaceId}/files`, { params: { path: filePath } }),
+  scan: (id: string): Promise<{ success: boolean; data: WorkspaceSummary; error?: string }> =>
+    api.post(`/workspace/${id}/rescan`),
+
+  readFile: (filePath: string): Promise<{ success: boolean; data: { path: string; content: string }; error?: string }> =>
+    api.post('/workspace/file/read', { path: filePath }),
+
+  writeFile: (filePath: string, content: string, createDirectories = true): Promise<{ success: boolean; data: { path: string }; error?: string }> =>
+    api.post('/workspace/file/write', { path: filePath, content, createDirectories }),
+
+  deleteFile: (filePath: string): Promise<{ success: boolean; data: { path: string }; error?: string }> =>
+    api.post('/workspace/file/delete', { path: filePath }),
+
+  createDirectory: (dirPath: string, recursive = true): Promise<{ success: boolean; data: { path: string }; error?: string }> =>
+    api.post('/workspace/file/mkdir', { path: dirPath, recursive }),
+
+  listDirectory: (dirPath = '.'): Promise<{ success: boolean; data: Array<{ name: string; path: string; isDirectory: boolean; size: number; modified: string }>; error?: string }> =>
+    api.post('/workspace/file/list', { path: dirPath }),
+
+  searchFiles: (query: string, path?: string, type?: string, filePattern?: string): Promise<{ success: boolean; data: any[]; error?: string }> =>
+    api.post('/workspace/file/search', { query, path, type, filePattern }),
 }
 
 export const dagApi = {
@@ -151,6 +171,109 @@ export const agentApi = {
 
   getConflicts: (type: string, target: string, agentId: string) =>
     api.get('/agents/bus/conflicts', { params: { type, target, agentId } }),
+
+  create: (agent: Partial<Agent>): Promise<{ success: boolean; data: Agent; error?: string }> =>
+    api.post('/agents', agent),
+
+  update: (id: string, updates: Partial<Agent>): Promise<{ success: boolean; data: Agent; error?: string }> =>
+    api.put(`/agents/${id}`, updates),
+
+  delete: (id: string): Promise<{ success: boolean; message?: string; error?: string }> =>
+    api.delete(`/agents/${id}`),
+
+  createSession: (title: string, masterAgentId: string, participatingAgentIds: string[]): Promise<{ 
+    success: boolean; 
+    data?: any; 
+    error?: string 
+  }> =>
+    api.post('/agents/sessions', { title, masterAgentId, participatingAgentIds }),
+
+  listSessions: (): Promise<{ success: boolean; data: any[]; error?: string }> =>
+    api.get('/agents/sessions'),
+
+  getSession: (id: string): Promise<{ success: boolean; data: any; error?: string }> =>
+    api.get(`/agents/sessions/${id}`),
+
+  startSession: (id: string): Promise<{ success: boolean; data: any; error?: string }> =>
+    api.post(`/agents/sessions/${id}/start`),
+
+  pauseSession: (id: string): Promise<{ success: boolean; data: any; error?: string }> =>
+    api.post(`/agents/sessions/${id}/pause`),
+
+  addTask: (sessionId: string, description: string, priority?: string, assignedTo?: string): Promise<{ 
+    success: boolean; 
+    data?: any; 
+    error?: string 
+  }> =>
+    api.post('/agents/sessions/:id/tasks', { sessionId, description, priority, assignedTo }),
+
+  executeTask: (sessionId: string, taskId: string, llmConfig?: any): Promise<{ 
+    success: boolean; 
+    data?: any; 
+    error?: string 
+  }> =>
+    api.post(`/agents/sessions/${sessionId}/tasks/${taskId}/execute`, { llmConfig }),
+
+  executeCommand: async (
+    command: string,
+    workingDirectory?: string,
+    timeout = 30000
+  ): Promise<{ success: boolean; data?: { output: string; exitCode: number }; error?: string }> => {
+    try {
+      const response = await fetch('/api/v1/agent/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command, workingDirectory, timeout })
+      })
+      
+      const data = await response.json()
+      return data
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Command execution failed'
+      }
+    }
+  },
+
+  gitOperation: async (
+    operation: string,
+    args?: string
+  ): Promise<{ success: boolean; data?: { output: string; exitCode: number }; error?: string }> => {
+    try {
+      const response = await fetch('/api/v1/agent/git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation, args })
+      })
+      
+      const data = await response.json()
+      return data
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Git operation failed'
+      }
+    }
+  },
+
+  getWorkspaceFiles: async (
+    workspaceId: string
+  ): Promise<{ success: boolean; data?: { files: string[] }; error?: string }> => {
+    try {
+      const response = await fetch(`/api/v1/agent/workspace/${workspaceId}/files`, {
+        method: 'GET'
+      })
+      
+      const data = await response.json()
+      return data
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get workspace files'
+      }
+    }
+  },
 }
 
 export const blueprintApi = {
@@ -177,14 +300,115 @@ export const blueprintApi = {
 }
 
 export const chatApi = {
-  sendMessage: (message: string, model: string, conversationId?: string): Promise<{ success: boolean; data: { response: string; conversationId: string } }> =>
-    api.post('/chat/message', { message, model, conversationId }),
+  sendMessage: (message: string, model: string, conversationId?: string, llmConfig?: { apiKey: string; baseUrl: string; modelName: string }): Promise<{ success: boolean; data: { response: string; conversationId: string } }> =>
+    api.post('/chat/message', { message, model, conversationId, llmConfig }),
 
-  getConversations: (): Promise<{ success: boolean; data: Array<{ id: string; title: string; updatedAt: string }> }> =>
+  sendMessageStream: (message: string, model: string, conversationId: string | undefined, llmConfig: { apiKey: string; baseUrl: string; modelName: string } | undefined, onChunk: (chunk: string) => void): Promise<string> => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const response = await fetch('/api/v1/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, model, conversationId, llmConfig })
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const reader = response.body?.getReader()
+        if (!reader) {
+          throw new Error('No reader available')
+        }
+
+        const decoder = new TextDecoder()
+        let fullResponse = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const chunk = decoder.decode(value, { stream: true })
+          const lines = chunk.split('\n').filter(line => line.trim())
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6)
+              if (dataStr === '[DONE]') continue
+
+              try {
+                const data = JSON.parse(dataStr)
+                const delta = data.choices?.[0]?.delta?.content
+                if (delta) {
+                  fullResponse += delta
+                  onChunk(delta)
+                }
+              } catch (e) {
+                console.debug('Parse stream data error', e)
+              }
+            }
+          }
+        }
+
+        resolve(fullResponse)
+      } catch (error) {
+        reject(error)
+      }
+    })
+  },
+
+  getConversations: (): Promise<{ success: boolean; data: Array<{ id: string; title: string; updatedAt: string; messageCount: number }> }> =>
     api.get('/chat/conversations'),
 
   getMessages: (conversationId: string): Promise<{ success: boolean; data: Array<{ id: string; role: string; content: string; timestamp: string }> }> =>
     api.get(`/chat/conversations/${conversationId}/messages`),
+
+  deleteConversation: (conversationId: string): Promise<{ success: boolean }> =>
+    api.delete(`/chat/conversations/${conversationId}`),
+}
+
+export interface ModelConfig {
+  id: string
+  name: string
+  provider: string
+  type: 'llm' | 'custom'
+  apiKey: string
+  baseUrl: string
+  modelName: string
+  icon?: string
+  isDefault: boolean
+  temperature?: number
+  topP?: number
+  maxTokens?: number
+  contextWindow?: number
+  protocol?: 'openai' | 'anthropic'
+  useFullUrl?: boolean
+  fullUrl?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export const modelApi = {
+  getProviders: (): Promise<{ success: boolean; data: any[] }> =>
+    api.get('/models/providers'),
+
+  list: (): Promise<{ success: boolean; data: ModelConfig[] }> =>
+    api.get('/models'),
+
+  get: (id: string): Promise<{ success: boolean; data: ModelConfig }> =>
+    api.get(`/models/${id}`),
+
+  create: (config: Omit<ModelConfig, 'id' | 'createdAt' | 'updatedAt'>): Promise<{ success: boolean; data: ModelConfig }> =>
+    api.post('/models', config),
+
+  update: (id: string, updates: Partial<ModelConfig>): Promise<{ success: boolean; data: ModelConfig }> =>
+    api.put(`/models/${id}`, updates),
+
+  delete: (id: string): Promise<{ success: boolean }> =>
+    api.delete(`/models/${id}`),
+
+  testConnection: (params: { apiKey: string; baseUrl: string; modelName: string; protocol?: string }): Promise<{ success: boolean; data: { connected: boolean; error?: string } }> =>
+    api.post('/models/test', params),
 }
 
 export const timelineApi = {

@@ -37,11 +37,13 @@ export interface GitInfo {
 export interface ProjectSummary {
   id: string;
   path: string;
+  name: string;
   techStack: TechStackInfo;
   modules: ModuleInfo[];
   gitInfo: GitInfo;
   dependencies: Record<string, string>;
   fileCount: number;
   totalSize: number;
+  fileTree: FileNode[];
   createdAt: string;
 }

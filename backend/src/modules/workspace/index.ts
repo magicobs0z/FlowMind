@@ -3,7 +3,8 @@ import { detectFromPackageJson, detectFromConfigFiles } from './techStackDetecto
 import { analyzeModules, parseDependencies } from './moduleAnalyzer';
 import { analyzeGit } from './gitAnalyzer';
 import { logger } from '../../utils/logger';
-import type { ProjectSummary } from './types';
+import type { ProjectSummary, FileNode } from './types';
+import { basename } from 'path';
 
 const WORKSPACE_IDS = new Map<string, string>();
 
@@ -23,11 +24,15 @@ async function generateProjectSummary(projectPath: string): Promise<ProjectSumma
 
   const id = generateId(projectPath);
   const createdAt = new Date().toISOString();
+  const name = basename(projectPath);
 
-  const fileTree = await scanDirectory(projectPath, projectPath);
+  const rootNode = await scanDirectory(projectPath, projectPath);
 
-  const fileCount = countFiles(fileTree);
-  const totalSize = calculateTotalSize(fileTree);
+  const fileCount = countFiles(rootNode);
+  const totalSize = calculateTotalSize(rootNode);
+
+  // Convert root node children to fileTree array for frontend
+  const fileTree: FileNode[] = rootNode?.children || [];
 
   const techStack = await detectFromPackageJson(projectPath);
   await detectFromConfigFiles(projectPath, techStack);
@@ -40,12 +45,14 @@ async function generateProjectSummary(projectPath: string): Promise<ProjectSumma
   const summary: ProjectSummary = {
     id,
     path: projectPath,
+    name,
     techStack,
     modules,
     gitInfo,
     dependencies,
     fileCount,
     totalSize,
+    fileTree,
     createdAt,
   };
 

@@ -1,4 +1,4 @@
-import { X, FileCode, Workflow, GitCompare, Home, Settings } from 'lucide-react'
+import { X, FileCode, Workflow, GitCompare, Home, Settings, Terminal } from 'lucide-react'
 import { useTabStore } from '../../store'
 
 const tabIcons: Record<string, typeof FileCode> = {
@@ -8,6 +8,7 @@ const tabIcons: Record<string, typeof FileCode> = {
   diff: GitCompare,
   welcome: Home,
   settings: Settings,
+  terminal: Terminal,
 }
 
 export default function TabBar() {

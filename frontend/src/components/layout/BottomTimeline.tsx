@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { GitCommit, Bot, User, Code, Clock, ChevronDown, ChevronUp, PanelBottomOpen } from 'lucide-react'
+import { GitCommit, Bot, User, Code, Clock } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
 import { timelineApi } from '../../services/api'
 import type { TimelineEvent } from '../../store'

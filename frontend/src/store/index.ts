@@ -1,8 +1,27 @@
 import { create } from 'zustand'
 
+export interface FlowNode {
+  id: string
+  type?: string
+  position: { x: number; y: number }
+  data: Record<string, any>
+  className?: string
+  style?: React.CSSProperties
+}
+
+export interface FlowEdge {
+  id: string
+  source: string
+  target: string
+  type?: string
+  animated?: boolean
+  markerEnd?: { type: string }
+  style?: React.CSSProperties
+}
+
 export interface Tab {
   id: string
-  type: 'file' | 'blueprint' | 'dag' | 'diff' | 'welcome' | 'settings'
+  type: 'file' | 'blueprint' | 'dag' | 'diff' | 'welcome' | 'settings' | 'terminal'
   title: string
   path?: string
   content?: string
@@ -24,6 +43,27 @@ export interface Message {
   content: string
   timestamp: string
   model?: string
+  status?: 'thinking' | 'tool_call' | 'executing' | 'result' | 'error'
+  contents?: any[]
+  think?: string
+  toolCalls?: any[]
+  plan?: any
+}
+
+export interface AIMessage extends Message {
+  role: 'ai'
+  contents?: any[]
+  think?: string
+  toolCalls?: any[]
+  plan?: any
+}
+
+export interface UserMessage extends Message {
+  role: 'user'
+}
+
+export interface SystemMessage extends Message {
+  role: 'system'
 }
 
 export interface Conversation {
@@ -44,17 +84,41 @@ export interface TimelineEvent {
   agentId?: string
 }
 
+export interface AIModel {
+  id: string
+  name: string
+  provider: string
+  type: 'llm' | 'custom'
+  apiKey: string
+  baseUrl?: string
+  modelName?: string
+  icon?: string
+  isDefault: boolean
+}
+
+export interface Blueprint {
+  id: string
+  name: string
+  description?: string
+  nodes: FlowNode[]
+  edges: FlowEdge[]
+  createdAt: string
+  updatedAt: string
+}
+
 interface LayoutState {
-  leftWidth: number
   rightWidth: number
   bottomHeight: number
-  leftCollapsed: boolean
+  chatWidth: number
+  conversationPanelWidth: number
+  conversationPanelOpen: boolean
   rightCollapsed: boolean
   bottomCollapsed: boolean
-  setLeftWidth: (w: number) => void
   setRightWidth: (w: number) => void
   setBottomHeight: (h: number) => void
-  toggleLeft: () => void
+  setChatWidth: (w: number) => void
+  setConversationPanelWidth: (w: number) => void
+  toggleConversationPanel: () => void
   toggleRight: () => void
   toggleBottom: () => void
 }
@@ -86,6 +150,7 @@ interface ChatState {
   setConversations: (c: Conversation[]) => void
   setCurrentConversation: (id: string) => void
   addMessage: (conversationId: string, message: Message) => void
+  updateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) => void
   setLoading: (loading: boolean) => void
   setSelectedModel: (model: string) => void
   createConversation: () => string
@@ -99,17 +164,93 @@ interface WorkspaceState {
   addTimelineEvent: (event: TimelineEvent) => void
 }
 
+interface AIState {
+  models: AIModel[]
+  currentModelId: string | null
+  setModels: (models: AIModel[]) => void
+  addModel: (model: AIModel) => void
+  updateModel: (id: string, model: Partial<AIModel>) => void
+  deleteModel: (id: string) => void
+  setCurrentModelId: (id: string) => void
+}
+
+interface BlueprintState {
+  blueprints: Blueprint[]
+  currentBlueprintId: string | null
+  isExecuting: boolean
+  setBlueprints: (blueprints: Blueprint[]) => void
+  setCurrentBlueprintId: (id: string) => void
+  createBlueprint: (name: string, nodes: FlowNode[], edges: FlowEdge[]) => string
+  updateBlueprint: (id: string, updates: Partial<Blueprint>) => void
+  deleteBlueprint: (id: string) => void
+  setIsExecuting: (executing: boolean) => void
+}
+
+export interface AgentTask {
+  id: string
+  description: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  result?: any
+  error?: string
+  logs: Array<{
+    timestamp: string
+    type: 'info' | 'tool' | 'result' | 'error'
+    message: string
+  }>
+  backendTaskId?: string
+  sessionId?: string
+}
+
+export type AgentType =
+  | 'master'
+  | 'sub_master'
+  | 'lead'
+  | 'sub_lead'
+  | 'coder'
+  | 'reviewer'
+  | 'tester'
+  | 'explorer'
+  | 'custom'
+
+export interface AgentInfo {
+  id: string
+  name: string
+  type: AgentType
+  description?: string
+  status: 'idle' | 'busy' | 'error' | 'offline'
+  capabilities: string[]
+  modelProvider?: string
+  model?: string
+}
+
+interface AgentState {
+  tasks: AgentTask[]
+  currentTaskId: string | null
+  agents: AgentInfo[]
+  currentSessionId: string | null
+  addTask: (task: AgentTask) => void
+  updateTask: (id: string, updates: Partial<AgentTask>) => void
+  removeTask: (id: string) => void
+  setCurrentTaskId: (id: string | null) => void
+  clearTasks: () => void
+  setAgents: (agents: AgentInfo[]) => void
+  updateAgent: (id: string, updates: Partial<AgentInfo>) => void
+  setCurrentSessionId: (id: string | null) => void
+}
+
 export const useLayoutStore = create<LayoutState>((set) => ({
-  leftWidth: 380,
   rightWidth: 280,
   bottomHeight: 200,
-  leftCollapsed: false,
+  chatWidth: 520,
+  conversationPanelWidth: 260,
+  conversationPanelOpen: false,
   rightCollapsed: false,
   bottomCollapsed: false,
-  setLeftWidth: (w) => set({ leftWidth: Math.max(260, Math.min(600, w)) }),
-  setRightWidth: (w) => set({ rightWidth: Math.max(200, Math.min(400, w)) }),
+  setRightWidth: (w) => set({ rightWidth: Math.max(200, Math.min(500, w)) }),
   setBottomHeight: (h) => set({ bottomHeight: Math.max(100, Math.min(400, h)) }),
-  toggleLeft: () => set((s) => ({ leftCollapsed: !s.leftCollapsed })),
+  setChatWidth: (w) => set({ chatWidth: Math.max(400, Math.min(800, w)) }),
+  setConversationPanelWidth: (w) => set({ conversationPanelWidth: Math.max(180, Math.min(400, w)) }),
+  toggleConversationPanel: () => set((s) => ({ conversationPanelOpen: !s.conversationPanelOpen })),
   toggleRight: () => set((s) => ({ rightCollapsed: !s.rightCollapsed })),
   toggleBottom: () => set((s) => ({ bottomCollapsed: !s.bottomCollapsed })),
 }))
@@ -174,6 +315,20 @@ export const useChatStore = create<ChatState>((set) => ({
           : c
       ),
     })),
+  updateMessage: (conversationId, messageId, updates) =>
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId
+          ? {
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === messageId ? { ...m, ...updates } : m
+              ),
+              updatedAt: new Date().toISOString(),
+            }
+          : c
+      ),
+    })),
   setLoading: (loading) => set({ isLoading: loading }),
   setSelectedModel: (model) => set({ selectedModel: model }),
   createConversation: () => {
@@ -198,6 +353,103 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   timelineEvents: [],
   setWorkspace: (w) => set({ currentWorkspace: w }),
   setTimelineEvents: (events) => set({ timelineEvents: events }),
-  addTimelineEvent: (event) =>
-    set((s) => ({ timelineEvents: [...s.timelineEvents, event] })),
+  addTimelineEvent: (event) => set((s) => ({ timelineEvents: [...s.timelineEvents, event] })),
+}))
+
+export const useAIStore = create<AIState>((set, get) => {
+  // 从 localStorage 加载作为初始值（兼容旧数据）
+  const savedModels = localStorage.getItem('flowmind_ai_models')
+  const initialModels: AIModel[] = savedModels ? JSON.parse(savedModels) : []
+
+  const defaultModel = initialModels.find(m => m.isDefault) || initialModels[0]
+
+  return {
+    models: initialModels,
+    currentModelId: defaultModel?.id || null,
+    setModels: (models) => {
+      localStorage.setItem('flowmind_ai_models', JSON.stringify(models))
+      set({ models })
+    },
+    addModel: (model) => {
+      const newModels = [...get().models, model]
+      localStorage.setItem('flowmind_ai_models', JSON.stringify(newModels))
+      set({ models: newModels })
+    },
+    updateModel: (id, model) => {
+      const newModels = get().models.map(m => m.id === id ? { ...m, ...model } : m)
+      localStorage.setItem('flowmind_ai_models', JSON.stringify(newModels))
+      set({ models: newModels })
+    },
+    deleteModel: (id) => {
+      const newModels = get().models.filter(m => m.id !== id)
+      localStorage.setItem('flowmind_ai_models', JSON.stringify(newModels))
+      set({ models: newModels })
+    },
+    setCurrentModelId: (id) => set({ currentModelId: id }),
+  }
+})
+
+export const useBlueprintStore = create<BlueprintState>((set, get) => {
+  const savedBlueprints = localStorage.getItem('flowmind_blueprints')
+  const initialBlueprints: Blueprint[] = savedBlueprints ? JSON.parse(savedBlueprints) : []
+
+  return {
+    blueprints: initialBlueprints,
+    currentBlueprintId: null,
+    isExecuting: false,
+    setBlueprints: (blueprints) => {
+      localStorage.setItem('flowmind_blueprints', JSON.stringify(blueprints))
+      set({ blueprints })
+    },
+    setCurrentBlueprintId: (id) => set({ currentBlueprintId: id }),
+    createBlueprint: (name, nodes, edges) => {
+      const id = `blueprint_${Date.now()}`
+      const newBlueprint: Blueprint = {
+        id,
+        name,
+        nodes,
+        edges,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+      const newBlueprints = [...get().blueprints, newBlueprint]
+      localStorage.setItem('flowmind_blueprints', JSON.stringify(newBlueprints))
+      set({ blueprints: newBlueprints, currentBlueprintId: id })
+      return id
+    },
+    updateBlueprint: (id, updates) => {
+      const newBlueprints = get().blueprints.map(b =>
+        b.id === id ? { ...b, ...updates, updatedAt: new Date().toISOString() } : b
+      )
+      localStorage.setItem('flowmind_blueprints', JSON.stringify(newBlueprints))
+      set({ blueprints: newBlueprints })
+    },
+    deleteBlueprint: (id) => {
+      const newBlueprints = get().blueprints.filter(b => b.id !== id)
+      localStorage.setItem('flowmind_blueprints', JSON.stringify(newBlueprints))
+      set({ blueprints: newBlueprints })
+    },
+    setIsExecuting: (executing) => set({ isExecuting: executing }),
+  }
+})
+
+export const useAgentStore = create<AgentState>((set, get) => ({
+  tasks: [],
+  currentTaskId: null,
+  agents: [],
+  currentSessionId: null,
+  addTask: (task) => set({ tasks: [...get().tasks, task] }),
+  updateTask: (id, updates) =>
+    set({
+      tasks: get().tasks.map(t => t.id === id ? { ...t, ...updates } : t)
+    }),
+  removeTask: (id) => set({ tasks: get().tasks.filter(t => t.id !== id) }),
+  setCurrentTaskId: (id) => set({ currentTaskId: id }),
+  clearTasks: () => set({ tasks: [] }),
+  setAgents: (agents) => set({ agents }),
+  updateAgent: (id, updates) =>
+    set({
+      agents: get().agents.map(a => a.id === id ? { ...a, ...updates } : a)
+    }),
+  setCurrentSessionId: (id) => set({ currentSessionId: id }),
 }))

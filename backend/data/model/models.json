@@ -1,0 +1,21 @@
+[
+  {
+    "name": "GLM-4 Air",
+    "provider": "智谱AI",
+    "type": "llm",
+    "apiKey": "66b81acfa4714da783d2af5728aa3c49.xJT1GmvyKDM15Zst",
+    "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+    "modelName": "GLM-4.7-Flash",
+    "isDefault": true,
+    "temperature": 0.7,
+    "topP": 0.9,
+    "maxTokens": 4096,
+    "contextWindow": 128000,
+    "protocol": "openai",
+    "useFullUrl": false,
+    "fullUrl": "",
+    "id": "model_1780744413793",
+    "createdAt": "2026-06-06T11:13:33.793Z",
+    "updatedAt": "2026-06-06T11:13:33.793Z"
+  }
+]

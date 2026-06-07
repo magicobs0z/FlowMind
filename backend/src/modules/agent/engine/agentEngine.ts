@@ -91,12 +91,14 @@ export class AgentEngine {
         }
 
         if (response.toolCalls.length > 0) {
+          // Add assistant message with tool calls
           messages.push({
             role: 'assistant',
             content: response.content,
             tool_calls: response.toolCalls,
           });
 
+          // Execute each tool call
           for (const toolCall of response.toolCalls) {
             if (options?.abortSignal?.aborted) {
               return {
@@ -111,23 +113,40 @@ export class AgentEngine {
             const result = await this.executeToolCall(toolCall, toolContext);
             toolResults.push(result);
 
+            // Format tool result in a clean, readable way for the LLM
+            let output = '';
+            if (result.ok) {
+              output = result.summary || 'Tool executed successfully';
+              if (result.stdout) {
+                output += '\n\nOutput:\n' + result.stdout;
+              }
+              if (result.stderr) {
+                output += '\n\nErrors:\n' + result.stderr;
+              }
+            } else {
+              output = `Error: ${result.summary || 'Tool execution failed'}`;
+            }
+
+            // Add tool result message
             messages.push({
               role: 'tool',
-              content: JSON.stringify({
-                ok: result.ok,
-                summary: result.summary,
-                stdout: result.stdout,
-                stderr: result.stderr,
-                exitCode: result.exitCode,
-              }),
+              content: output,
               tool_call_id: toolCall.id,
             });
+
+            logger.info({ toolCall: toolCall.name, result: result.summary }, 'Tool executed and result added to messages');
           }
+
+          // Continue to next iteration to let LLM analyze tool results
+          logger.info({ toolCallsExecuted: response.toolCalls.length }, 'Continuing to next iteration');
         } else {
+          // No tool calls, this is the final response
           messages.push({
             role: 'assistant',
             content: response.content,
           });
+
+          logger.info({ contentLength: response.content.length, iteration }, 'AgentEngine completed successfully');
 
           return {
             success: true,

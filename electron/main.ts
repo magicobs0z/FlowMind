@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import * as path from 'path'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
@@ -10,7 +10,7 @@ function createBrowserWindow(): BrowserWindow {
     minWidth: 1024,
     minHeight: 768,
     show: false,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#f8fafc',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -45,6 +45,18 @@ app.whenReady().then(() => {
 
   ipcMain.handle('app:get-platform', () => {
     return process.platform
+  })
+
+  ipcMain.handle('dialog:select-directory', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: '选择项目目录',
+    })
+    
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0]
+    }
+    return null
   })
 
   app.on('activate', () => {

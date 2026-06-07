@@ -1,5 +1,5 @@
 import { X, Trash2 } from 'lucide-react';
-import type { Node as RFNode } from '@xyflow/react';
+import type { Node as RFNode } from 'reactflow';
 
 interface PropertyPanelProps {
   node: RFNode;

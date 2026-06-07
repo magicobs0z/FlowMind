@@ -3,6 +3,8 @@ import { generateProjectSummary } from './index'
 import { HTTP_STATUS, ERROR_CODES } from '../../constants'
 import { logger } from '../../utils/logger'
 import { fileService } from './fileService'
+import * as fs from 'fs'
+import * as path from 'path'
 
 const workspaceCache = new Map<string, any>()
 export { workspaceCache }
@@ -21,6 +23,22 @@ const openWorkspace = async (req: Request, res: Response): Promise<void> => {
     }
 
     logger.info({ path: projectPath }, 'Opening workspace')
+
+    // 初始化 .flowmind 目录
+    const flowmindDir = path.join(projectPath, '.flowmind')
+    if (!fs.existsSync(flowmindDir)) {
+      logger.info({ dir: flowmindDir }, 'Creating .flowmind directory')
+      fs.mkdirSync(flowmindDir, { recursive: true })
+      
+      // 可以在这里创建默认配置文件
+      const configPath = path.join(flowmindDir, 'config.json')
+      if (!fs.existsSync(configPath)) {
+        fs.writeFileSync(configPath, JSON.stringify({
+          version: '1.0',
+          created: new Date().toISOString(),
+        }, null, 2))
+      }
+    }
 
     const summary = await generateProjectSummary(projectPath)
     workspaceCache.set(summary.id, summary)

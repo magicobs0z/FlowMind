@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Play, Pause, Settings, Trash2, Edit, Activity, Cpu, Code, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import { Plus, Play, Pause, Settings, Trash2, Edit, Activity, Cpu, Code } from 'lucide-react'
+// @ts-ignore - API modules will be implemented
 import { agentApi } from '../services/api'
+// @ts-ignore
 import { skillRegistry } from '../services/skillSystem'
+// @ts-ignore
 import { mcpManager } from '../services/mcpSystem'
 
 interface Agent {

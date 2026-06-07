@@ -5,14 +5,51 @@ import type { AgentTask, TaskEvent, TaskFilter, TaskEventType } from './types';
 const DEFAULT_TIMEOUT_MS = 300000; // 5 minutes
 const HEARTBEAT_INTERVAL_MS = 10000; // 10 seconds
 
+type LogType = 'info' | 'tool' | 'result' | 'error';
+
+interface LogEntry {
+  timestamp: string;
+  type: LogType;
+  message: string;
+}
+
 export class TaskService extends EventEmitter {
   private tasks: Map<string, AgentTask> = new Map();
   private events: Map<string, TaskEvent[]> = new Map();
+  private logs: Map<string, LogEntry[]> = new Map();
   private timeoutTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     super();
     this.startTimeoutChecker();
+  }
+
+  addLog(taskId: string, type: LogType, message: string): void {
+    if (!this.logs.has(taskId)) {
+      this.logs.set(taskId, []);
+    }
+    const entry: LogEntry = {
+      timestamp: new Date().toISOString(),
+      type,
+      message,
+    };
+    this.logs.get(taskId)!.push(entry);
+
+    // Also emit as an event for SSE - include the log entry directly
+    const event = {
+      type: 'log' as const,
+      taskId,
+      timestamp: new Date(),
+      data: { log: entry },
+      log: entry, // 前端 watchTask 会直接读取这个字段
+    };
+    this.addEvent(taskId, 'progress', { log: entry });
+    this.emit('task:log', event);
+    this.emit('task:event', event);
+  }
+
+  getLogs(taskId: string): LogEntry[] {
+    return this.logs.get(taskId) || [];
   }
 
   private startTimeoutChecker(): void {

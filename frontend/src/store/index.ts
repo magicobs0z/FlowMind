@@ -43,7 +43,11 @@ export interface Message {
   content: string
   timestamp: string
   model?: string
-  status?: 'thinking' | 'tool_call' | 'executing' | 'result' | 'error'
+  status?: 'thinking' | 'planning' | 'tool_call' | 'executing' | 'terminal_running' | 'preview_generating' | 'result' | 'error' | 'interrupted'
+  statusDetail?: string
+  statusProgress?: number
+  statusLogs?: string[]
+  toolName?: string
   contents?: any[]
   think?: string
   toolCalls?: any[]
@@ -100,6 +104,7 @@ export interface Blueprint {
   id: string
   name: string
   description?: string
+  category?: string
   nodes: FlowNode[]
   edges: FlowEdge[]
   createdAt: string
@@ -158,11 +163,18 @@ interface ChatState {
 
 interface WorkspaceState {
   currentWorkspace: { id: string; path: string; name: string } | null
+  isConfigured: boolean
   timelineEvents: TimelineEvent[]
   setWorkspace: (w: { id: string; path: string; name: string } | null) => void
+  setConfigured: (configured: boolean) => void
   setTimelineEvents: (events: TimelineEvent[]) => void
   addTimelineEvent: (event: TimelineEvent) => void
+  clearWorkspace: () => void
 }
+
+// 从 localStorage 恢复工作区
+const savedWorkspace = localStorage.getItem('flowmind_workspace')
+const initialWorkspace: WorkspaceState['currentWorkspace'] = savedWorkspace ? JSON.parse(savedWorkspace) : null
 
 interface AIState {
   models: AIModel[]
@@ -180,7 +192,7 @@ interface BlueprintState {
   isExecuting: boolean
   setBlueprints: (blueprints: Blueprint[]) => void
   setCurrentBlueprintId: (id: string) => void
-  createBlueprint: (name: string, nodes: FlowNode[], edges: FlowEdge[]) => string
+  createBlueprint: (name: string, nodes: FlowNode[], edges: FlowEdge[], category?: string) => string
   updateBlueprint: (id: string, updates: Partial<Blueprint>) => void
   deleteBlueprint: (id: string) => void
   setIsExecuting: (executing: boolean) => void
@@ -349,11 +361,24 @@ export const useChatStore = create<ChatState>((set) => ({
 }))
 
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({
-  currentWorkspace: null,
+  currentWorkspace: initialWorkspace,
+  isConfigured: !!initialWorkspace,
   timelineEvents: [],
-  setWorkspace: (w) => set({ currentWorkspace: w }),
+  setWorkspace: (w) => {
+    if (w) {
+      localStorage.setItem('flowmind_workspace', JSON.stringify(w))
+    } else {
+      localStorage.removeItem('flowmind_workspace')
+    }
+    set({ currentWorkspace: w, isConfigured: !!w })
+  },
+  setConfigured: (configured) => set({ isConfigured: configured }),
   setTimelineEvents: (events) => set({ timelineEvents: events }),
   addTimelineEvent: (event) => set((s) => ({ timelineEvents: [...s.timelineEvents, event] })),
+  clearWorkspace: () => {
+    localStorage.removeItem('flowmind_workspace')
+    set({ currentWorkspace: null, isConfigured: false })
+  },
 }))
 
 export const useAIStore = create<AIState>((set, get) => {
@@ -402,11 +427,12 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => {
       set({ blueprints })
     },
     setCurrentBlueprintId: (id) => set({ currentBlueprintId: id }),
-    createBlueprint: (name, nodes, edges) => {
+    createBlueprint: (name, nodes, edges, category) => {
       const id = `blueprint_${Date.now()}`
       const newBlueprint: Blueprint = {
         id,
         name,
+        category,
         nodes,
         edges,
         createdAt: new Date().toISOString(),

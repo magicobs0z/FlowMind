@@ -11,6 +11,9 @@ FlowMind 是一个多智能体协作平台，让 AI 智能体能够相互通信�
 - ⏱️ **后台任务服务**：异步任务队列，超时控制，心跳检测，SSE 实时通知
 - 🔒 **安全机制**：工作区限制、命令白名单、文件写入锁、自动备份
 - 📡 **智能体协商总线**：层级路由、任务委托、冲突检测、契约验证
+- 🎨 **实时状态提示**：AI 执行过程全程透明，展示思考、计划、工具调用、执行等状态
+- 📝 **Markdown 渲染**：支持美观的 Markdown 格式消息显示
+- ⏹️ **任务停止**：随时可停止正在执行的任务
 
 ## 📁 项目结构
 
@@ -270,8 +273,43 @@ cd backend
 npm test -- --testPathPattern="modules/agent"
 ```
 
+## 🎨 前端功能
+
+### 状态提示系统
+
+AI 执行过程全程透明，支持以下状态：
+
+| 状态 | 描述 | 图标 |
+|------|------|------|
+| thinking | 思考中，正在理解需求 | 🔄 |
+| planning | 制定计划中 | 📋 |
+| tool_call | 调用工具中（显示工具名称） | 🔧 |
+| executing | 执行中 | 🛠️ |
+| terminal_running | 终端运行中（显示日志） | 💻 |
+| preview_generating | 生成预览 | 👁️ |
+| result | 已完成 | ✅ |
+| error | 执行失败 | ❌ |
+| interrupted | 已中断 | ⏸️ |
+
+### Markdown 支持
+
+支持完整的 Markdown 格式渲染：
+- 标题、列表、粗体、斜体
+- 代码块（支持语言高亮）
+- 链接、引用
+- 美观的排版效果
+
+### 任务控制
+
+- **停止按钮**：执行中随时可停止任务
+- **重新生成**：对结果不满意可重新生成
+- **复制内容**：一键复制消息内容
+- **状态重置**：停止后立即可以发送新消息
+
 ## 📚 文档
 
+- [前端文档](./frontend/README.md) - 前端使用和开发指南
+- [CHANGELOG](./CHANGELOG.md) - 版本更新日志
 - [智能体系统 Spec](.trae/specs/agent-system-oma-redesign/spec.md) - 架构设计规格
 - [任务清单](.trae/specs/agent-system-oma-redesign/tasks.md) - 实施任务分解
 - [验收清单](.trae/specs/agent-system-oma-redesign/checklist.md) - 功能验收检查点

@@ -1,0 +1,43 @@
+[
+  {
+    "name": "????",
+    "description": "??????",
+    "category": "task",
+    "version": "1.0.0",
+    "stages": [],
+    "nodes": [
+      {
+        "id": "node_1",
+        "type": "event",
+        "title": "??",
+        "config": {
+          "trigger": "manual"
+        },
+        "status": "pending",
+        "dependencies": [],
+        "input": {},
+        "output": {}
+      },
+      {
+        "id": "node_2",
+        "type": "print",
+        "title": "??",
+        "config": {
+          "message": "Hello World"
+        },
+        "status": "pending",
+        "dependencies": [
+          "node_1"
+        ],
+        "input": {},
+        "output": {}
+      }
+    ],
+    "edges": [],
+    "humanGateways": [],
+    "functions": [],
+    "id": "bp_1780754796939_7o9pez9",
+    "createdAt": "2026-06-06T14:06:36.939Z",
+    "updatedAt": "2026-06-06T14:06:36.939Z"
+  }
+]

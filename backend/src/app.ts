@@ -13,6 +13,7 @@ import { blueprintRoutes } from './modules/blueprint/routes';
 import { chatRoutes } from './modules/chat/routes';
 import { timelineRoutes } from './modules/timeline/routes';
 import { modelRoutes } from './modules/model/routes';
+import { contextRoutes } from './modules/context';
 
 const app = express();
 
@@ -41,6 +42,7 @@ app.use('/api/v1/blueprints', blueprintRoutes);
 app.use('/api/v1/chat', chatRoutes);
 app.use('/api/v1/git/timeline', timelineRoutes);
 app.use('/api/v1/models', modelRoutes);
+app.use('/api/v1/context', contextRoutes);
 
 app.use((req, _res, next) => {
   const err = new FlowMindError(

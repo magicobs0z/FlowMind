@@ -5,6 +5,12 @@ declare global {
     showDirectoryPicker(options?: {
       mode?: 'read' | 'readwrite'
     }): Promise<FileSystemDirectoryHandle>
+    
+    electronAPI?: {
+      getAppVersion: () => Promise<string>
+      getPlatform: () => Promise<string>
+      selectDirectory: () => Promise<string | null>
+    }
   }
 
   interface FileSystemDirectoryHandle {

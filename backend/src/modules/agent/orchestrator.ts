@@ -392,7 +392,7 @@ class MultiAgentOrchestrator {
   async executeTask(
     sessionId: string,
     taskId: string,
-    llmConfig?: { apiKey: string; baseUrl: string; modelName: string }
+    llmConfig?: { apiKey: string; baseUrl: string; modelName: string; provider?: string }
   ): Promise<Task | null> {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -401,14 +401,8 @@ class MultiAgentOrchestrator {
     }
 
     const task = session.tasks.find((t) => t.id === taskId);
-    if (!task || task.assignedTo) {
-      logger.warn({ sessionId, taskId }, 'Task not found or already assigned');
-      return null;
-    }
-
-    const masterAgent = this.agents.get(session.masterAgent);
-    if (!masterAgent) {
-      logger.warn({ sessionId, agentId: session.masterAgent }, 'Master agent not found');
+    if (!task) {
+      logger.warn({ sessionId, taskId }, 'Task not found');
       return null;
     }
 
@@ -424,6 +418,8 @@ class MultiAgentOrchestrator {
 
     // Start asynchronously
     taskService.startTask(agentTask.id);
+    taskService.addLog(agentTask.id, 'info', `任务已创建: ${agentTask.id}`);
+    taskService.addLog(agentTask.id, 'info', `开始执行任务: ${task.description}`);
 
     task.status = 'in_progress';
     task.startedAt = new Date();
@@ -446,10 +442,11 @@ class MultiAgentOrchestrator {
     taskId: string,
     task: Task,
     agentTaskId: string,
-    llmConfig?: { apiKey: string; baseUrl: string; modelName: string }
+    llmConfig?: { apiKey: string; baseUrl: string; modelName: string; provider?: string }
   ): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) {
+      taskService.addLog(agentTaskId, 'error', '任务执行失败: Session 不存在');
       taskService.failTask(agentTaskId, 'Session not found during background execution');
       return;
     }
@@ -460,7 +457,9 @@ class MultiAgentOrchestrator {
         this.assignTask(sessionId, taskId, bestAgentId);
       }
 
-      const result = await this.performTaskExecution(task, llmConfig);
+      taskService.addLog(agentTaskId, 'info', '正在分配 Agent 并启动 AI 执行...');
+
+      const result = await this.performTaskExecution(task, agentTaskId, llmConfig);
 
       task.result = result;
       task.status = 'completed';
@@ -484,11 +483,13 @@ class MultiAgentOrchestrator {
         }
       }
 
+      taskService.addLog(agentTaskId, 'info', '任务执行完成');
       taskService.completeTask(agentTaskId, result);
       this.logSessionEvent(sessionId, session.masterAgent, 'task_completed', { taskId, agentTaskId });
       logger.info({ sessionId, taskId, agentTaskId }, 'Task completed successfully');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      taskService.addLog(agentTaskId, 'error', `任务执行失败: ${errorMessage}`);
       task.error = errorMessage;
       task.status = 'failed';
       task.completedAt = new Date();
@@ -520,6 +521,108 @@ class MultiAgentOrchestrator {
       });
       logger.error({ sessionId, taskId, agentTaskId, error: errorMessage }, 'Task failed');
     }
+  }
+
+  private async performTaskExecution(
+    task: Task,
+    agentTaskId: string,
+    llmConfig?: { apiKey: string; baseUrl: string; modelName: string; provider?: string }
+  ): Promise<unknown> {
+    // Resolve LLM config
+    let resolvedConfig: { apiKey: string; baseUrl: string; modelName: string; provider: string };
+
+    if (llmConfig?.apiKey) {
+      resolvedConfig = {
+        provider: llmConfig.provider || 'openai',
+        apiKey: llmConfig.apiKey,
+        baseUrl: llmConfig.baseUrl || 'https://api.openai.com/v1',
+        modelName: llmConfig.modelName || 'gpt-4o-mini',
+      };
+    } else {
+      // Try to read from environment variables
+      const openaiKey = process.env.OPENAI_API_KEY;
+      const anthropicKey = process.env.ANTHROPIC_API_KEY;
+
+      if (openaiKey) {
+        resolvedConfig = {
+          provider: 'openai',
+          apiKey: openaiKey,
+          baseUrl: process.env.OPENAI_API_BASE || 'https://api.openai.com/v1',
+          modelName: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        };
+      } else if (anthropicKey) {
+        resolvedConfig = {
+          provider: 'anthropic',
+          apiKey: anthropicKey,
+          baseUrl: process.env.ANTHROPIC_API_BASE || 'https://api.anthropic.com/v1',
+          modelName: process.env.ANTHROPIC_MODEL || 'claude-3-haiku-20240307',
+        };
+      } else {
+        taskService.addLog(agentTaskId, 'error', '未配置 LLM API Key，请在前端或 .env 文件中设置');
+        throw new Error('No LLM config provided and no API key found in environment variables');
+      }
+    }
+
+    taskService.addLog(agentTaskId, 'info', `使用 ${resolvedConfig.provider} 提供商，模型: ${resolvedConfig.modelName}`);
+    logger.info({ taskId: task.id, llmConfig: resolvedConfig }, 'Performing task execution');
+
+    const agentId = task.assignedTo || 'agent_lead';
+    const systemPrompt = this.getAgentPrompt(agentId);
+
+    const config: LLMConfig = {
+      provider: resolvedConfig.provider as 'openai' | 'anthropic',
+      apiKey: resolvedConfig.apiKey,
+      baseUrl: resolvedConfig.baseUrl,
+      modelName: resolvedConfig.modelName,
+      temperature: 0.7,
+      maxTokens: 4096,
+    };
+
+    const engine = new AgentEngine({
+      llmConfig: config,
+      toolRegistry: this.toolRegistry,
+      systemPrompt,
+      maxIterations: 20,
+      contextWindowSize: 10,
+    });
+
+    const toolContext = {
+      worktree: process.cwd(),
+      directory: process.cwd(),
+      allowOutsideWorktree: false,
+    };
+
+    // Hook into engine execution to log
+    const result = await engine.execute(task.description, toolContext, {
+      onStreamChunk: (chunk) => {
+        if (chunk.content) {
+          // We could send incremental content updates, but for now just log when tool calls happen
+        }
+      },
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Task execution failed');
+    }
+
+    // Log tool results
+    if (result.toolResults && result.toolResults.length > 0) {
+      for (const toolResult of result.toolResults) {
+        const resultType = toolResult.ok ? 'result' : 'error';
+        taskService.addLog(agentTaskId, 'tool', `执行工具: ${toolResult.tool}`);
+        taskService.addLog(agentTaskId, resultType, `工具结果: ${toolResult.summary || (toolResult.ok ? '成功' : '失败')}`);
+      }
+    }
+
+    return {
+      message: 'Task execution completed',
+      task: task.description,
+      content: result.content,
+      toolResults: result.toolResults,
+      iterations: result.iterations,
+      status: 'completed',
+      timestamp: new Date().toISOString(),
+    };
   }
 
   private selectBestAgent(taskDescription: string): string | null {
@@ -580,60 +683,6 @@ class MultiAgentOrchestrator {
     }
 
     return bestAgent ? bestAgent.id : null;
-  }
-
-  private async performTaskExecution(
-    task: Task,
-    llmConfig?: { apiKey: string; baseUrl: string; modelName: string; provider?: string }
-  ): Promise<unknown> {
-    if (!llmConfig) {
-      logger.warn('No LLM config provided, skipping AI execution');
-      return { message: 'Task queued for execution' };
-    }
-
-    logger.info({ taskId: task.id, llmConfig }, 'Performing task execution');
-
-    const agentId = task.assignedTo || 'agent_lead';
-    const systemPrompt = this.getAgentPrompt(agentId);
-
-    const config: LLMConfig = {
-      provider: (llmConfig.provider as 'openai' | 'anthropic') || 'openai',
-      apiKey: llmConfig.apiKey,
-      baseUrl: llmConfig.baseUrl,
-      modelName: llmConfig.modelName,
-      temperature: 0.7,
-      maxTokens: 4096,
-    };
-
-    const engine = new AgentEngine({
-      llmConfig: config,
-      toolRegistry: this.toolRegistry,
-      systemPrompt,
-      maxIterations: 20,
-      contextWindowSize: 10,
-    });
-
-    const toolContext = {
-      worktree: process.cwd(),
-      directory: process.cwd(),
-      allowOutsideWorktree: false,
-    };
-
-    const result = await engine.execute(task.description, toolContext);
-
-    if (!result.success) {
-      throw new Error(result.error || 'Task execution failed');
-    }
-
-    return {
-      message: 'Task execution completed',
-      task: task.description,
-      content: result.content,
-      toolResults: result.toolResults,
-      iterations: result.iterations,
-      status: 'completed',
-      timestamp: new Date().toISOString(),
-    };
   }
 
   getAgentPrompt(agentId: string): string {

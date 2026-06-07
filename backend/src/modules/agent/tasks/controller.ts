@@ -98,10 +98,14 @@ const listTasks = async (req: Request, res: Response): Promise<void> => {
     }
 
     const tasks = taskService.listTasks(filter);
+    const tasksWithLogs = tasks.map(task => ({
+      ...task,
+      logs: taskService.getLogs(task.id),
+    }));
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      data: tasks,
+      data: tasksWithLogs,
     });
   } catch (error) {
     logger.error({ err: error }, 'Failed to list tasks');
@@ -135,9 +139,15 @@ const getTask = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    const logs = taskService.getLogs(id);
+    const taskWithLogs = {
+      ...task,
+      logs,
+    };
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      data: task,
+      data: taskWithLogs,
     });
   } catch (error) {
     logger.error({ err: error }, 'Failed to get task');

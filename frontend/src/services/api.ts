@@ -16,8 +16,6 @@ api.interceptors.response.use(
   }
 )
 
-export default api
-
 export interface WorkspaceSummary {
   id: string
   path: string

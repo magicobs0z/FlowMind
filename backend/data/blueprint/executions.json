@@ -1,0 +1,43 @@
+[
+  {
+    "id": "exec_1780754804357_sjtip6g",
+    "templateId": "bp_1780754796939_7o9pez9",
+    "taskId": "task_1780754804357_8dn2ve6",
+    "workspaceId": "default",
+    "title": "????",
+    "nodes": [
+      {
+        "id": "node_1",
+        "type": "event",
+        "title": "??",
+        "config": {
+          "trigger": "manual"
+        },
+        "status": "pending",
+        "dependencies": [],
+        "input": {},
+        "output": {}
+      },
+      {
+        "id": "node_2",
+        "type": "print",
+        "title": "??",
+        "config": {
+          "message": "Hello World"
+        },
+        "status": "pending",
+        "dependencies": [
+          "node_1"
+        ],
+        "input": {},
+        "output": {}
+      }
+    ],
+    "edges": [],
+    "humanGateways": [],
+    "status": "draft",
+    "progress": 0,
+    "createdAt": "2026-06-06T14:06:44.357Z",
+    "updatedAt": "2026-06-06T14:06:44.357Z"
+  }
+]

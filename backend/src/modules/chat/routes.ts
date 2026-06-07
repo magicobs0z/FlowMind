@@ -1,24 +1,40 @@
 import { Router } from 'express';
 import { HTTP_STATUS, ERROR_CODES } from '../../constants';
 import { logger } from '../../utils/logger';
-import { callLLM } from './llmService';
 import { chatRepository, ChatMessage, Conversation } from './repository';
 import { modelRepository } from '../model/repository';
+import { AgentEngine } from '../agent/engine';
+import { ToolRegistry } from '../agent/tools';
 
 const router = Router();
 
-// 默认系统提示词
-const DEFAULT_SYSTEM_PROMPT = `你是 FlowMind，一个由多智能体组成的 AI 编程助手。你的职责是帮助用户开发和调试软件项目。
+// 聊天系统提示词 - 包含工具使用指南
+const DEFAULT_SYSTEM_PROMPT = `你是 FlowMind，一个强大的 AI 编程助手，具有代码读写和执行能力。
 
-你可以：
-1. 阅读和分析代码
-2. 编写和修改代码
-3. 分析项目结构
-4. 调试和修复问题
-5. 解释技术概念
-6. 提供最佳实践建议
+## 你的能力
 
-请用清晰、简洁、友好的语言回答。`;
+你可以使用以下工具来完成任务：
+1. **read_file** - 读取文件内容
+2. **write_file** - 写入或创建文件
+3. **list_directory** - 列出目录内容
+4. **search_files** - 在文件中搜索内容
+5. **execute_command** - 执行终端命令
+6. **gitOperations** - 执行 Git 操作
+
+## 使用工具的原则
+
+- 当需要了解项目结构时，先使用 list_directory
+- 当需要查看代码时，使用 read_file
+- 当需要修改或创建代码时，使用 write_file
+- 当需要执行命令（如 npm install, git 等）时，使用 execute_command
+- 尽可能通过工具获取真实信息，而不是猜测
+
+## 响应格式
+
+你可以直接回答用户问题，也可以通过调用工具来完成任务。
+工具调用将自动执行，结果会返回给你继续处理。
+
+请用清晰、简洁、友好的语言回答，并在适当的时候使用工具来帮助完成任务。`;
 
 function getOrCreateConversation(conversationId?: string, title?: string): { convId: string; conversation: Conversation } {
   let convId = conversationId;
@@ -89,7 +105,7 @@ router.post('/message', async (req, res) => {
     conversation.messages.push(userMessage);
     chatRepository.set(conversation);
 
-    logger.info({ conversationId: convId, model }, 'Processing chat message');
+    logger.info({ conversationId: convId, model }, 'Processing chat message with Agent Engine');
 
     // 获取LLM配置：优先使用请求中的配置，否则从后端存储加载
     let llmSettings = llmConfig;
@@ -99,21 +115,46 @@ router.post('/message', async (req, res) => {
 
     let responseContent: string;
 
-    // 如果有 LLM 配置，调用真实 LLM
+    // 如果有 LLM 配置，使用 Agent Engine 调用（支持工具）
     if (llmSettings?.apiKey && llmSettings?.baseUrl && llmSettings?.modelName) {
-      const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-        { role: 'system', content: systemPrompt || DEFAULT_SYSTEM_PROMPT },
-        ...conversation.messages.map(m => ({
-          role: (m.role === 'ai' ? 'assistant' : m.role) as 'user' | 'assistant',
-          content: m.content
-        })),
-      ];
-
-      responseContent = await callLLM(messages, {
-        apiKey: llmSettings.apiKey,
-        baseUrl: llmSettings.baseUrl,
-        modelName: llmSettings.modelName,
+      const toolRegistry = new ToolRegistry();
+      
+      const engine = new AgentEngine({
+        llmConfig: {
+          provider: 'openai',
+          apiKey: llmSettings.apiKey,
+          baseUrl: llmSettings.baseUrl,
+          modelName: llmSettings.modelName,
+          temperature: 0.7,
+          maxTokens: 4096,
+        },
+        toolRegistry,
+        systemPrompt: systemPrompt || DEFAULT_SYSTEM_PROMPT,
+        maxIterations: 10,
+        contextWindowSize: 10,
       });
+
+      const toolContext = {
+        worktree: process.cwd(),
+        directory: process.cwd(),
+        allowOutsideWorktree: false,
+      };
+
+      const result = await engine.execute(message, toolContext);
+      
+      if (result.success) {
+        responseContent = result.content;
+        // 如果有工具调用结果，可以附在响应中（可选）
+        if (result.toolResults && result.toolResults.length > 0) {
+          responseContent += '\n\n---\n\n**已执行的操作：**\n';
+          for (const toolResult of result.toolResults) {
+            const status = toolResult.ok ? '✅' : '❌';
+            responseContent += `${status} ${toolResult.tool}: ${toolResult.summary}\n`;
+          }
+        }
+      } else {
+        responseContent = result.error || '执行失败';
+      }
     } else {
       // 无配置时的备用响应
       responseContent = `我无法连接到 AI 服务，因为还没有配置模型。\n\n请在设置页面配置你的 AI 模型（如 DeepSeek、GPT-4 等），然后就可以开始使用真实的 AI 了！\n\n当前你发送的消息："${message}"`;
@@ -188,26 +229,59 @@ router.post('/stream', async (req, res) => {
 
     let fullResponse = '';
 
-    // 如果有 LLM 配置，调用真实 LLM
+    // 如果有 LLM 配置，使用 Agent Engine 调用（支持工具）
     if (llmSettings?.apiKey && llmSettings?.baseUrl && llmSettings?.modelName) {
-      const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-        { role: 'system', content: systemPrompt || DEFAULT_SYSTEM_PROMPT },
-        ...conversation.messages.map(m => ({
-          role: (m.role === 'ai' ? 'assistant' : m.role) as 'user' | 'assistant',
-          content: m.content
-        })),
-      ];
+      const toolRegistry = new ToolRegistry();
+      
+      const engine = new AgentEngine({
+        llmConfig: {
+          provider: 'openai',
+          apiKey: llmSettings.apiKey,
+          baseUrl: llmSettings.baseUrl,
+          modelName: llmSettings.modelName,
+          temperature: 0.7,
+          maxTokens: 4096,
+        },
+        toolRegistry,
+        systemPrompt: systemPrompt || DEFAULT_SYSTEM_PROMPT,
+        maxIterations: 10,
+        contextWindowSize: 10,
+        onStreamChunk: (chunk) => {
+          if (chunk.content) {
+            fullResponse += chunk.content;
+            res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: chunk.content } }] }) }\n\n`);
+          }
+        },
+      });
 
-      const streamCallback = (chunk: string) => {
-        fullResponse += chunk;
-        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] }) }\n\n`);
+      const toolContext = {
+        worktree: process.cwd(),
+        directory: process.cwd(),
+        allowOutsideWorktree: false,
       };
 
-      await callLLM(messages, {
-        apiKey: llmSettings.apiKey,
-        baseUrl: llmSettings.baseUrl,
-        modelName: llmSettings.modelName,
-      }, streamCallback);
+      const result = await engine.execute(message, toolContext);
+      
+      if (result.success) {
+        fullResponse = result.content;
+        // 如果有工具调用结果，附加到响应中
+        if (result.toolResults && result.toolResults.length > 0) {
+          const toolInfo = '\n\n---\n\n**已执行的操作：**\n';
+          fullResponse += toolInfo;
+          res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: toolInfo } }] }) }\n\n`);
+          
+          for (const toolResult of result.toolResults) {
+            const status = toolResult.ok ? '✅' : '❌';
+            const toolLine = `${status} ${toolResult.tool}: ${toolResult.summary}\n`;
+            fullResponse += toolLine;
+            res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: toolLine } }] }) }\n\n`);
+          }
+        }
+      } else {
+        const errorMsg = result.error || '执行失败';
+        fullResponse = errorMsg;
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: errorMsg } }] }) }\n\n`);
+      }
     } else {
       // 无配置时的备用响应（流式）
       const fallbackResponse = `我无法连接到 AI 服务，因为还没有配置模型。\n\n请在设置页面配置你的 AI 模型（如 DeepSeek、GPT-4 等），然后就可以开始使用真实的 AI 了！\n\n当前你发送的消息："${message}"`;

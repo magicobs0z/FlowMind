@@ -1,4 +1,4 @@
-import { useAgentStore } from '../store'
+import { useAgentStore, useAIStore } from '../store'
 import {
   createTask,
   executeTask as executeTaskApi,
@@ -18,6 +18,7 @@ export interface AgentTask {
     type: 'info' | 'tool' | 'result' | 'error'
     message: string
   }>
+  backendTaskId?: string
 }
 
 export interface AgentExecutionContext {
@@ -27,6 +28,7 @@ export interface AgentExecutionContext {
     apiKey: string
     baseUrl: string
     modelName: string
+    provider?: string
   }
   sessionId?: string
 }
@@ -70,7 +72,22 @@ export class AgentExecutor {
       const sessionId = context.sessionId || (await this.ensureSession())
       this.currentSessionId = sessionId
 
-      // 2. 调用后端创建任务
+      // 2. 获取 LLM 配置 - 优先从 context 传入，否则从 store 获取
+      let llmConfig = context.llmConfig
+      if (!llmConfig) {
+        const aiStore = useAIStore.getState()
+        const currentModel = aiStore.models.find(m => m.id === aiStore.currentModelId)
+        if (currentModel) {
+          llmConfig = {
+            apiKey: currentModel.apiKey,
+            baseUrl: currentModel.baseUrl || 'https://api.openai.com/v1',
+            modelName: currentModel.modelName || currentModel.id,
+            provider: currentModel.provider,
+          }
+        }
+      }
+
+      // 3. 调用后端创建任务
       log('info', '创建后端任务...')
       const createResult = await createTask(sessionId, {
         description: task.description,
@@ -86,12 +103,10 @@ export class AgentExecutor {
 
       const backendTask = createResult.data
       this.currentTaskId = backendTask.id
-
-      // 同步后端任务状态到前端任务
-      task.id = backendTask.id
+      task.backendTaskId = backendTask.id
       log('info', `任务已创建: ${backendTask.id}`)
 
-      // 3. 启动任务监听（SSE 优先，降级轮询）
+      // 4. 启动任务监听（SSE 优先，降级轮询）
       log('info', '连接任务实时更新...')
       this.cleanupWatch = watchTask(
         backendTask.id,
@@ -125,9 +140,9 @@ export class AgentExecutor {
         }
       )
 
-      // 4. 调用后端执行任务
+      // 5. 调用后端执行任务
       log('info', '开始执行...')
-      const executeResult = await executeTaskApi(sessionId, backendTask.id, context.llmConfig)
+      const executeResult = await executeTaskApi(sessionId, backendTask.id, llmConfig)
 
       if (!executeResult.success) {
         task.status = 'failed'
@@ -136,7 +151,7 @@ export class AgentExecutor {
         return
       }
 
-      // 5. 等待任务完成（watchTask 已经在后台更新状态）
+      // 6. 等待任务完成（watchTask 已经在后台更新状态）
       await this.waitForCompletion(backendTask.id, task)
 
       if (this.shouldStop) {
@@ -179,11 +194,14 @@ export class AgentExecutor {
   private syncTaskState(agentTask: AgentTask, backendTask: TaskData): void {
     // 将后端状态映射到前端状态
     const statusMap: Record<string, AgentTask['status']> = {
+      queued: 'pending',
       pending: 'pending',
+      dispatching: 'running',
       running: 'running',
       completed: 'completed',
       failed: 'failed',
       cancelled: 'failed',
+      timed_out: 'failed',
     }
     agentTask.status = statusMap[backendTask.status] || backendTask.status as AgentTask['status']
     agentTask.result = backendTask.result

@@ -1,11 +1,14 @@
-import { Settings, User, PanelRightOpen, PanelBottomOpen, MessageSquare, X, Workflow, Terminal } from 'lucide-react'
-import { useLayoutStore, useTabStore, useChatStore, useBlueprintStore } from './store'
+import { useState, useEffect } from 'react'
+import { Settings, User, PanelRightOpen, PanelBottomOpen, MessageSquare, X, Workflow, Terminal, FolderOpen, ChevronDown } from 'lucide-react'
+import { useLayoutStore, useTabStore, useChatStore, useBlueprintStore, useWorkspaceStore, useFileStore } from './store'
 import ResizablePanel from './components/layout/ResizablePanel'
 import ChatPanel from './components/layout/ChatPanel'
 import TabBar from './components/layout/TabBar'
 import EditorArea from './components/layout/EditorArea'
 import RightPanel from './components/layout/RightPanel'
 import BottomTimeline from './components/layout/BottomTimeline'
+import BlueprintWelcomeModal from './components/layout/BlueprintWelcomeModal'
+import { workspaceApi } from './services/api'
 
 function App() {
   const {
@@ -26,33 +29,163 @@ function App() {
   } = useLayoutStore()
 
   const { openTab } = useTabStore()
-  const { createBlueprint, setCurrentBlueprintId } = useBlueprintStore()
+  const { setCurrentBlueprintId } = useBlueprintStore()
+  const { currentWorkspace, isConfigured, clearWorkspace } = useWorkspaceStore()
+  const { setFileTree } = useFileStore()
+  const [showProjectMenu, setShowProjectMenu] = useState(false)
+  const [showBlueprintModal, setShowBlueprintModal] = useState(false)
+  const [recentProjects, setRecentProjects] = useState<Array<{ path: string; name: string }>>([])
+
+  // 初始化加载工作区文件树
+  useEffect(() => {
+    const initializeWorkspace = async () => {
+      if (currentWorkspace && currentWorkspace.path) {
+        try {
+          const response = await workspaceApi.open(currentWorkspace.path)
+          if (response.success && response.data.fileTree) {
+            setFileTree(response.data.fileTree)
+          }
+        } catch (error) {
+          console.error('初始化工作区失败:', error)
+        }
+      }
+    }
+    initializeWorkspace()
+  }, [])
+
+  // 加载最近项目
+  useEffect(() => {
+    const saved = localStorage.getItem('flowmind_recent_projects')
+    if (saved) {
+      setRecentProjects(JSON.parse(saved))
+    }
+  }, [])
 
   const handleOpenSettings = () => {
     openTab({ id: 'settings', type: 'settings', title: '设置' })
   }
 
   const handleCreateBlueprint = () => {
-    const newId = createBlueprint('新蓝图', [], [])
-    setCurrentBlueprintId(newId)
-    openTab({ id: newId, type: 'blueprint', title: '新蓝图' })
+    setShowBlueprintModal(true)
   }
 
   const handleOpenTerminal = () => {
     openTab({ id: 'terminal', type: 'terminal', title: '终端' })
   }
 
+  const handleSwitchProject = () => {
+    setShowProjectMenu(!showProjectMenu)
+  }
+
+  const handleSelectProject = async (path: string) => {
+    try {
+      const response = await workspaceApi.open(path)
+      if (response.success && response.data) {
+        setFileTree(response.data.fileTree || [])
+        useWorkspaceStore.getState().setWorkspace({
+          id: response.data.id,
+          path: response.data.path,
+          name: response.data.name,
+        })
+      }
+    } catch (error) {
+      console.error('切换项目失败:', error)
+    }
+    setShowProjectMenu(false)
+  }
+
+  const handleClearWorkspace = () => {
+    clearWorkspace()
+    setShowProjectMenu(false)
+  }
+
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: '#f7f7f7' }}>
       {/* 顶部栏 */}
       <div className="h-8 flex-shrink-0 flex items-center justify-between px-3 border-b border-gray-200" style={{ background: '#fafafa' }}>
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded flex items-center justify-center" style={{ background: '#0099ff' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="none">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-            </svg>
+        <div className="flex items-center gap-2 relative">
+          {/* FlowMind 图标 + 项目切换下拉 */}
+          <div className="relative">
+            <button
+              onClick={handleSwitchProject}
+              className="flex items-center gap-1.5 hover:bg-gray-100 rounded px-1 py-0.5 transition-colors"
+            >
+              <div className="w-6 h-6 rounded flex items-center justify-center" style={{ background: '#0099ff' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="none">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                </svg>
+              </div>
+              <span className="text-xs font-medium text-gray-800">FlowMind</span>
+              {isConfigured && <ChevronDown size={10} className="text-gray-400" />}
+            </button>
+            
+            {/* 项目切换下拉菜单 */}
+            {showProjectMenu && (
+              <>
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setShowProjectMenu(false)} 
+                />
+                <div className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="p-2 border-b border-gray-100">
+                    <div className="text-[10px] text-gray-400 uppercase tracking-wider px-2">
+                      当前项目
+                    </div>
+                    {isConfigured && currentWorkspace ? (
+                      <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-blue-50">
+                        <FolderOpen size={12} className="text-blue-500" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-gray-800 truncate">
+                            {currentWorkspace.name}
+                          </div>
+                          <div className="text-[9px] text-gray-400 truncate">
+                            {currentWorkspace.path}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="px-2 py-1.5 text-xs text-gray-500">
+                        未选择项目
+                      </div>
+                    )}
+                  </div>
+                  
+                  {recentProjects.length > 0 && (
+                    <div className="p-2 border-b border-gray-100">
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wider px-2 mb-1">
+                        最近项目
+                      </div>
+                      {recentProjects.slice(0, 5).map((project) => (
+                        <button
+                          key={project.path}
+                          onClick={() => handleSelectProject(project.path)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 text-left"
+                        >
+                          <FolderOpen size={12} className="text-gray-400" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs text-gray-700 truncate">{project.name}</div>
+                            <div className="text-[9px] text-gray-400 truncate">{project.path}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {isConfigured && (
+                    <div className="p-2">
+                      <button
+                        onClick={handleClearWorkspace}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-red-600 hover:bg-red-50"
+                      >
+                        <X size={12} />
+                        关闭当前项目
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
-          <span className="text-xs font-medium text-gray-800">FlowMind</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -79,7 +212,7 @@ function App() {
         {rightCollapsed && (
           <button
             onClick={toggleRight}
-            className="p-1.5 rounded-md bg-[var(--flowmind-primary)]/10 text-[var(--flowmind-primary)] hover:bg-[var(--flowmind-primary)]/20 transition-colors"
+            className="p-1.5 rounded-md bg-sky-100 text-sky-600 hover:bg-sky-200 transition-colors"
             title="展开右侧面板"
           >
             <PanelRightOpen size={14} />
@@ -88,7 +221,7 @@ function App() {
         {bottomCollapsed && (
           <button
             onClick={toggleBottom}
-            className="p-1.5 rounded-md bg-[var(--flowmind-primary)]/10 text-[var(--flowmind-primary)] hover:bg-[var(--flowmind-primary)]/20 transition-colors"
+            className="p-1.5 rounded-md bg-sky-100 text-sky-600 hover:bg-sky-200 transition-colors"
             title="展开时间轴"
           >
             <PanelBottomOpen size={14} />
@@ -109,7 +242,7 @@ function App() {
                 <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">对话历史</span>
                 <button
                   onClick={toggleConversationPanel}
-                  className="p-1 rounded hover:bg-gray-200 text-gray-500 transition-colors"
+                  className="p-1 rounded hover:bg-sky-50 text-gray-500 hover:text-sky-600 transition-colors"
                   title="收起"
                 >
                   <X size={14} />
@@ -150,7 +283,7 @@ function App() {
             <div className="flex items-center gap-1">
               <button
                 onClick={toggleConversationPanel}
-                className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 transition-colors"
+                className="p-1.5 rounded-lg hover:bg-sky-50 text-gray-600 hover:text-sky-600 transition-colors"
                 title="对话列表"
               >
                 <MessageSquare size={15} />
@@ -159,13 +292,13 @@ function App() {
             <div className="flex items-center gap-1">
               <button
                 onClick={handleOpenSettings}
-                className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 transition-colors"
+                className="p-1.5 rounded-lg hover:bg-sky-50 text-gray-600 hover:text-sky-600 transition-colors"
                 title="设置"
               >
                 <Settings size={15} />
               </button>
               <button
-                className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 transition-colors"
+                className="p-1.5 rounded-lg hover:bg-sky-50 text-gray-600 hover:text-sky-600 transition-colors"
                 title="用户"
               >
                 <User size={15} />
@@ -237,6 +370,11 @@ function App() {
           <RightPanel />
         </ResizablePanel>
       </div>
+
+      <BlueprintWelcomeModal
+        isOpen={showBlueprintModal}
+        onClose={() => setShowBlueprintModal(false)}
+      />
     </div>
   )
 }
@@ -249,7 +387,7 @@ function ConversationListEmbedded() {
       <div className="px-3 py-2 flex-shrink-0">
         <button
           onClick={createConversation}
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-[var(--flowmind-primary)]/10 text-[var(--flowmind-primary)] rounded-lg hover:bg-[var(--flowmind-primary)]/20 transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white rounded-lg transition-colors"
         >
           <span className="text-base">+</span>
           <span>新建对话</span>
@@ -268,7 +406,7 @@ function ConversationListEmbedded() {
               onClick={() => setCurrentConversation(conv.id)}
               className={`w-full text-left px-3 py-2 mx-1 rounded-lg text-sm transition-colors ${
                 currentConversationId === conv.id
-                  ? 'bg-[var(--flowmind-primary)]/10 text-[var(--flowmind-primary)]'
+                  ? 'bg-sky-100 text-sky-600'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >

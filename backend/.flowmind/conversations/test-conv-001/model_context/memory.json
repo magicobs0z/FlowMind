@@ -1,0 +1,13 @@
+[
+  {
+    "id": "mem-001",
+    "type": "fact",
+    "content": "用户喜欢使用TypeScript",
+    "timestamp": "2026-06-06T18:00:59.785Z",
+    "importance": 5,
+    "tags": [
+      "user",
+      "preference"
+    ]
+  }
+]

@@ -1,0 +1,48 @@
+{
+  "id": "test-conv-001",
+  "projectPath": "D:\\AI\\FlowMind\\flowmind\\backend",
+  "title": "测试对话",
+  "createdAt": "2026-06-06T18:00:59.765Z",
+  "updatedAt": "2026-06-06T18:00:59.796Z",
+  "messages": [
+    {
+      "id": "msg-001",
+      "role": "user",
+      "content": "你好，这是一条测试消息",
+      "timestamp": "2026-06-06T18:00:59.772Z"
+    },
+    {
+      "id": "msg-002",
+      "role": "ai",
+      "content": "你好！这是AI的回复",
+      "timestamp": "2026-06-06T18:00:59.779Z"
+    }
+  ],
+  "modelContext": {
+    "memory": [
+      {
+        "id": "mem-001",
+        "type": "fact",
+        "content": "用户喜欢使用TypeScript",
+        "timestamp": "2026-06-06T18:00:59.785Z",
+        "importance": 5,
+        "tags": [
+          "user",
+          "preference"
+        ]
+      }
+    ],
+    "settings": {}
+  },
+  "tasks": [
+    {
+      "id": "task-001",
+      "title": "实现上下文持久化",
+      "status": "completed",
+      "createdAt": "2026-06-06T18:00:59.793Z",
+      "updatedAt": "2026-06-06T18:00:59.793Z",
+      "result": "成功实现了上下文持久化系统"
+    }
+  ],
+  "metadata": {}
+}

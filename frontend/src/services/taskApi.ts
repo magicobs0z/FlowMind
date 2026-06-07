@@ -3,10 +3,10 @@ import api from './api'
 export interface TaskData {
   id: string
   description: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'queued' | 'dispatching' | 'timed_out'
   result?: unknown
   error?: string
-  logs: Array<{
+  logs?: Array<{
     timestamp: string
     type: 'info' | 'tool' | 'result' | 'error'
     message: string
@@ -52,7 +52,11 @@ export interface TaskEvent {
   type: 'status' | 'log' | 'result' | 'error' | 'complete'
   taskId: string
   data?: unknown
-  log?: TaskData['logs'][0]
+  log?: {
+    timestamp: string
+    type: 'info' | 'tool' | 'result' | 'error'
+    message: string
+  }
   timestamp: string
 }
 
@@ -64,7 +68,7 @@ export async function createTask(
   request: CreateTaskRequest
 ): Promise<CreateTaskResponse> {
   const response = await api.post(`/agents/sessions/${sessionId}/tasks`, request)
-  return response as CreateTaskResponse
+  return (response as unknown) as CreateTaskResponse
 }
 
 /**
@@ -78,7 +82,7 @@ export async function executeTask(
   const response = await api.post(`/agents/sessions/${sessionId}/tasks/${taskId}/execute`, {
     llmConfig,
   })
-  return response as ExecuteTaskResponse
+  return (response as unknown) as ExecuteTaskResponse
 }
 
 /**
@@ -86,7 +90,7 @@ export async function executeTask(
  */
 export async function getTask(taskId: string): Promise<GetTaskResponse> {
   const response = await api.get(`/tasks/${taskId}`)
-  return response as GetTaskResponse
+  return (response as unknown) as GetTaskResponse
 }
 
 /**
@@ -94,7 +98,7 @@ export async function getTask(taskId: string): Promise<GetTaskResponse> {
  */
 export async function cancelTask(taskId: string): Promise<CancelTaskResponse> {
   const response = await api.post(`/tasks/${taskId}/cancel`)
-  return response as CancelTaskResponse
+  return (response as unknown) as CancelTaskResponse
 }
 
 /**

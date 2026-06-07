@@ -1,4 +1,4 @@
-export type MessageStatus = 'thinking' | 'tool_call' | 'executing' | 'result' | 'error'
+export type MessageStatus = 'thinking' | 'planning' | 'tool_call' | 'executing' | 'terminal_running' | 'preview_generating' | 'result' | 'error' | 'interrupted'
 export type MessageRole = 'user' | 'ai' | 'system'
 export type ContentType = 'text' | 'code' | 'command' | 'table' | 'image' | 'link' | 'plan' | 'progress' | 'think'
 
@@ -26,6 +26,10 @@ export interface AIMessage {
   timestamp: string
   model?: string
   status: MessageStatus
+  statusDetail?: string
+  statusProgress?: number
+  statusLogs?: string[]
+  toolName?: string
   think?: string
   toolCalls?: ToolCall[]
   plan?: Plan

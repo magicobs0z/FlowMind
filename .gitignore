@@ -40,3 +40,9 @@ output/
 
 # CodeGraph
 .codegraph/
+
+# Startup scripts (local environment only)
+*.bat
+*.cmd
+*.ps1
+*.sh

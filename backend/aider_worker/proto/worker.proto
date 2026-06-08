@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package aider_worker;
+
+service AiderWorker {
+  rpc Execute (Contract) returns (Result);
+  rpc HealthCheck (HealthRequest) returns (HealthResponse);
+}
+
+message HealthRequest {
+}
+
+message HealthResponse {
+  bool healthy = 1;
+  string version = 2;
+  int64 uptime_seconds = 3;
+}
+
+message Contract {
+  // 模型配置
+  string model_name = 1;
+  string api_key_env_var = 2;
+
+  // 任务内容
+  string instruction = 10;
+  string system_prompt_extra = 11;
+
+  // 文件上下文
+  string repo_url = 20;
+  string base_commit = 21;
+  repeated string files = 22;
+  repeated string read_only_files = 23;
+  int32 clone_depth = 24;
+
+  // 行为控制
+  bool auto_lint = 30;
+  string lint_command = 31;
+  bool auto_test = 32;
+  string test_command = 33;
+  int32 max_reflections = 34;
+  bool dry_run = 35;
+
+  // 超时控制
+  int32 timeout_seconds = 40;
+
+  // 模型参数扩展
+  map<string, string> extra_params = 50;
+}
+
+message FileEdit {
+  string path = 1;
+  string diff = 2;
+  bool success = 3;
+  string error = 4;
+}
+
+message CostBreakdown {
+  double total_cost_usd = 1;
+  int64 prompt_tokens = 2;
+  int64 completion_tokens = 3;
+  int64 cache_write_tokens = 4;
+  int64 cache_hit_tokens = 5;
+}
+
+message Result {
+  bool success = 1;
+  string error_message = 2;
+
+  string head_commit = 10;
+  string base_commit = 11;
+
+  repeated FileEdit file_edits = 20;
+  string full_diff = 21;
+
+  CostBreakdown cost = 30;
+  double session_cost_usd = 31;
+  int64 total_tokens_sent = 32;
+  int64 total_tokens_received = 33;
+
+  string lint_output = 40;
+  string test_output = 41;
+  bool lint_passed = 42;
+  bool test_passed = 43;
+}

@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+.tmp/
+
+# Aider website assets (not needed for runtime)
+aider/website/assets/audio/
+aider/website/assets/asciinema/
+aider/website/assets/*.jpg
+aider/website/assets/*.mp4
+aider/website/assets/*.png
+aider/website/assets/*.svg
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs and databases
+*.log
+*.db
+*.db-shm
+*.db-wal
+output/
+
+# Environment config
+.env
+*.env.local
+
+# CodeGraph
+.codegraph/

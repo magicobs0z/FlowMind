@@ -237,6 +237,89 @@ class TodoService:
     def get_agent(self, agent_id: str) -> AgentStatus | None:
         return self._agents.get(agent_id)
 
+    # ── LLM 上下文注入 ────────────────────────────────
+
+    def format_project_context(self, repo_path: str = "",
+                               max_tasks: int = 20) -> str:
+        """生成供 LLM 消费的项目结构化摘要。
+
+        包含：整体进度、任务列表（含状态）、Agent 状态、文件清单。
+        项目经理 Worker 可调用此方法获取项目全貌。
+        """
+        lines = []
+        progress = self.get_project_progress()
+
+        lines.append("【项目进度总览】")
+        lines.append(f"  总任务: {progress['total']}, "
+                     f"已完成: {progress['completed']}, "
+                     f"进行中: {progress['in_progress']}, "
+                     f"阻塞: {progress['blocked']}, "
+                     f"进度: {progress['progress']:.0%}")
+
+        if self._tasks:
+            lines.append("\n【任务列表】")
+            all_tasks = sorted(self._tasks.values(),
+                              key=lambda t: t.updated_at or "", reverse=True)
+            for task in all_tasks[:max_tasks]:
+                status_icon = {
+                    "completed": "✅", "in_progress": "🔄",
+                    "blocked": "❌", "todo": "⏳",
+                }.get(task.status, "❓")
+                lines.append(
+                    f"  {status_icon} [{task.status}] {task.node_id or task.task_id}"
+                )
+                if task.description:
+                    desc = task.description[:100]
+                    lines.append(f"     {desc}")
+                if task.files:
+                    lines.append(f"     文件: {', '.join(task.files[:5])}")
+                if task.note:
+                    lines.append(f"     备注: {task.note[:80]}")
+                if task.blocked_reason:
+                    lines.append(f"     阻塞原因: {task.blocked_reason[:120]}")
+
+        if self._agents:
+            lines.append("\n【Agent 状态】")
+            for agent in list(self._agents.values())[:10]:
+                lines.append(f"  {agent.agent_id}: {agent.status} "
+                           f"(role={agent.role}, task={agent.current_task})")
+
+        # 文件清单（从所有 task 的 files 字段汇总）
+        all_files = set()
+        for task in self._tasks.values():
+            for f in task.files:
+                all_files.add(f)
+        if all_files:
+            lines.append("\n【涉及文件清单】")
+            for f in sorted(all_files)[:30]:
+                lines.append(f"  - {f}")
+
+        return "\n".join(lines)
+
+    def get_task_summary_for_llm(self, dag_id: str = "",
+                                  node_id: str = "") -> str:
+        """获取单个任务及其上下游的简明摘要。"""
+        if dag_id and node_id:
+            task_id = f"{dag_id}:{node_id}"
+        else:
+            task_id = node_id or dag_id
+
+        task = self._tasks.get(task_id)
+        if not task:
+            return ""
+
+        lines = [
+            f"任务: {task.node_id}",
+            f"描述: {task.description}",
+            f"状态: {task.status} (进度: {task.progress:.0%})",
+            f"文件: {', '.join(task.files) if task.files else '(无)'}",
+        ]
+        if task.note:
+            lines.append(f"备注: {task.note}")
+        if task.blocked_reason:
+            lines.append(f"阻塞原因: {task.blocked_reason}")
+        return "\n".join(lines)
+
     # ── 内部方法 ─────────────────────────────────────────
 
     def _add_task(self, task_id: str = "", **kw) -> TodoTask:

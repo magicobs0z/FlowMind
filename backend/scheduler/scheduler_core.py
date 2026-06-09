@@ -16,16 +16,69 @@ from .reviewer_agent import ReviewerAgent
 from .planning_agent import FlowAgent
 from .knowledge_service import KnowledgeService
 from .todo_service import TodoService
+from .capabilities import MCPConnector, SkillRegistry, RuleEngine, Rule
 from .models import (
     TaskDAG, TaskNode, DagState, TaskInstance, TaskStatus, SchedulerEvent,
     TokenUsage, MergeResult, NodeType, Blueprint, BudgetConfig,
     ContractChangeRequest, HumanInterruptRequest, ApprovalRequest,
-    MergeConflictInfo, InterruptReason,
+    MergeConflictInfo, InterruptReason, CapabilityConfig, MCPServerConfig,
+    SkillConfig, RuleConfig,
 )
 from .persistence import SQLitePersistence
 from .notification import create_notification_service
 
 logger = logging.getLogger(__name__)
+
+
+class CapabilityManager:
+    """MCP / Skill / Rule 三个能力模块的统一管理器。
+
+    用法:
+        cap_mgr = CapabilityManager.from_config(cap_config)
+        await cap_mgr.mcp.call_tool("server-a", "tool-x", {...})
+        await cap_mgr.skills.execute("code-review", {...})
+        violations = cap_mgr.rules.evaluate({"node_type": "code", ...})
+    """
+
+    def __init__(self):
+        self.mcp = MCPConnector()
+        self.skills = SkillRegistry()
+        self.rules = RuleEngine()
+
+    @classmethod
+    def from_config(cls, config: CapabilityConfig | None) -> "CapabilityManager":
+        mgr = cls()
+        if not config:
+            return mgr
+        for svr in config.mcp_servers:
+            if svr.enabled:
+                mgr.mcp.register_server(svr.name, svr.endpoint)
+        for sk in config.skills:
+            if sk.enabled:
+                mgr.skills.register_builtin(sk.name, sk.description,
+                                            sk.prompt_template, sk.tags)
+        for r in config.rules:
+            if r.enabled:
+                mgr.rules.add_rule(Rule(
+                    rule_id=r.rule_id, name=r.name,
+                    description=r.description,
+                    condition=r.condition,
+                    action=r.action, priority=r.priority,
+                ))
+        return mgr
+
+    def format_prompt_context(self) -> str:
+        parts = []
+        mcp_ctx = self.mcp.format_tools_context()
+        if mcp_ctx:
+            parts.append(mcp_ctx)
+        skill_ctx = self.skills.format_skills_context()
+        if skill_ctx:
+            parts.append(skill_ctx)
+        rule_ctx = self.rules.format_rules_context()
+        if rule_ctx:
+            parts.append(rule_ctx)
+        return "\n\n".join(parts)
 
 
 class SchedulerCore:
@@ -34,7 +87,9 @@ class SchedulerCore:
                  worker_host: str = "localhost",
                  base_port: int = 50051,
                  db_path: str = "flowmind.db",
-                 worker_pool=None):
+                 worker_pool=None,
+                 code_worker_pool=None,
+                 cap_config: CapabilityConfig | None = None):
         self.repo_path = repo_path
         self.dag_parser = DAGParser()
         self.event_bus = EventBus()
@@ -44,6 +99,12 @@ class SchedulerCore:
             self.worker_pool = worker_pool
         else:
             self.worker_pool = WorkerPool(max_workers, worker_host, base_port)
+        # code_worker_pool 用于 FlowAgent simple 模式直接生成代码（InProcWorkerPool 走 AiderWorker）
+        if code_worker_pool is not None:
+            self.code_worker_pool = code_worker_pool
+        else:
+            self.code_worker_pool = self.worker_pool
+
         self.git_mgr = GitBranchManager(repo_path) if repo_path else None
         self.verifier = Verifier()
         self.retry_ctrl = RetryController()
@@ -52,12 +113,16 @@ class SchedulerCore:
         self.tester_agent = TesterAgent()
         self.reviewer_agent = ReviewerAgent()
         self.knowledge_service = KnowledgeService()
+        self.cap_mgr = CapabilityManager.from_config(cap_config)
+        self.todo = TodoService(event_bus=self.event_bus, db_path=db_path)
         self.flow_agent = FlowAgent(
             worker_pool=self.worker_pool,
+            code_worker_pool=self.code_worker_pool,
             knowledge_service=self.knowledge_service,
             event_bus=self.event_bus,
+            cap_mgr=self.cap_mgr,
+            todo_service=self.todo,
         )
-        self.todo = TodoService(event_bus=self.event_bus, db_path=db_path)
         self.persistence = SQLitePersistence(db_path)
         self.notification = create_notification_service()
 
@@ -87,6 +152,7 @@ class SchedulerCore:
 
         state, ready_nodes = self.dag_parser.parse(dag)
         state.repo_path = self.repo_path  # 本地仓库路径
+        state.requirement_context = dag.requirement_context
         self._dag_states[dag.dag_id] = state
 
         # 用 register_from_contract 注册每个节点，确保 task_id 格式为 {dag_id}:{node_id}
@@ -144,6 +210,14 @@ class SchedulerCore:
             ))
             return result
 
+        # 聊天模式 → 直接返回
+        if result.get("mode") == "chat":
+            await self.event_bus.publish(SchedulerEvent(
+                event_type="flow.completed", dag_id="flow",
+                data={"mode": "chat", "success": True},
+            ))
+            return result
+
         # 简单任务 → 直接返回结果
         if result.get("mode") == "simple":
             await self.event_bus.publish(SchedulerEvent(
@@ -183,6 +257,7 @@ class SchedulerCore:
                 dag_id=dag_id,
                 repo_url=repo_url,
                 nodes=nodes,
+                requirement_context=dag_data.get("requirement_context", ""),
             )
 
             # 提交调度执行
@@ -410,7 +485,8 @@ class SchedulerCore:
         task.status = TaskStatus.RUNNING
         task.started_at = now
 
-        await self.event_bus.task_started(dag_id, node_id)
+        await self.event_bus.task_started(dag_id, node_id, worker_id=task.worker_id or "",
+                                       agent_role=task.node_type.value)
 
         # 标记任务为进行中，Agent 心跳
         task_id_key = f"{dag_id}:{node_id}"
@@ -462,6 +538,16 @@ class SchedulerCore:
             task.branch_name = self.git_mgr.create_task_branch(dag_id, node_id, base)
 
         agent_contract = self.contract_gen.generate(task, state, repo_path=self.repo_path)
+
+        # 注入全局需求摘要到 Engineer 提示词（P0-4）
+        if state.requirement_context and task.node_type == NodeType.CODE:
+            req_context = (
+                f"\n\n[全局需求上下文]\n{state.requirement_context}\n\n"
+                "请基于上述需求执行本节点任务，确保代码与整体需求一致。"
+            )
+            agent_contract.system_prompt_extra = (
+                f"{agent_contract.system_prompt_extra}{req_context}"
+            )
 
         knowledge_context = ""
         if self.knowledge_service:
@@ -541,9 +627,14 @@ class SchedulerCore:
                 checks=verification["checks"],
             )
             plan = self.retry_ctrl.plan_retry(task, v_result)
+
             task.contract["instruction"] = plan.get("updated_instruction", "")
             task.contract["base_commit"] = plan.get("rollback_to", "")
-            logger.info("retrying %s (%d/%d)", node_id, task.retry_count, task.max_retries)
+            task.contract["timeout_seconds"] = plan.get("timeout_seconds", task.contract.get("timeout_seconds", 120))
+
+            logger.info("retrying %s (%d/%d) timeout=%ds",
+                        node_id, task.retry_count, task.max_retries,
+                        plan.get("timeout_seconds", 120))
             self.todo.update_task(f"{dag_id}:{node_id}", status="in_progress",
                                    progress=0.1 + 0.5 * task.retry_count / task.max_retries,
                                    note=f"retry #{task.retry_count}")
@@ -551,12 +642,35 @@ class SchedulerCore:
             return
 
         if not verification["passed"]:
-            task.status = TaskStatus.FAILED
+            task.status = TaskStatus.BLOCKED
             task.error_message = f"verification failed after {task.retry_count} retries"
-            await self.event_bus.task_failed(dag_id, node_id, task.error_message)
+            task.result["_retry_history"] = {
+                "dag_id": dag_id,
+                "node_id": node_id,
+                "node_type": task.node_type.value,
+                "instruction": task.contract.get("instruction", ""),
+                "retry_count": task.retry_count,
+                "max_retries": task.max_retries,
+                "last_verification": {
+                    "passed": verification["passed"],
+                    "checks": verification["checks"],
+                },
+            }
             await self.event_bus.human_intervention(
-                dag_id, node_id, "verification_failed",
-                error=task.error_message, checks=verification["checks"],
+                dag_id, node_id, "retry_exhausted",
+                error=task.error_message,
+                retry_count=task.retry_count,
+                max_retries=task.max_retries,
+                checks=verification["checks"],
+                instruction=task.contract.get("instruction", ""),
+                prompt=(
+                    f"节点 {node_id}（{task.node_type.value}）"
+                    f"在 {task.retry_count}/{task.max_retries} 次重试后仍未通过校验。\n"
+                    f"请选择处理方式：\n"
+                    f"1. 继续（标记为成功，下游继续执行）\n"
+                    f"2. 暂停（不再执行该 DAG 剩余节点）\n"
+                    f"3. 重试（增加重试次数后再次尝试）"
+                ),
             )
             return
 
@@ -598,11 +712,15 @@ class SchedulerCore:
         task.finished_at = datetime.now(timezone.utc)
 
         if verification["passed"]:
-            gen_result = self.tester_agent.generate_regression_tests(
+            gen_result = await self.tester_agent.generate_regression_tests(
                 task, self.repo_path, self.worker_pool
             )
             if gen_result.get("generated"):
                 task.result["_regression_tests"] = gen_result
+                task.token_usage = TokenUsage(
+                    tokens_sent=gen_result.get("tokens_sent", 0),
+                    tokens_received=gen_result.get("tokens_received", 0),
+                )
                 await self.event_bus.token_usage(
                     dag_id, task.node_id,
                     gen_result.get("tokens_sent", 0),

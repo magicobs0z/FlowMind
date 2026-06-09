@@ -41,6 +41,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     PUBLIC_PATHS = {
         "/health", "/api/v1/health",
+        "/api/v1/auth/profile",
         "/docs", "/openapi.json", "/redoc",
     }
 

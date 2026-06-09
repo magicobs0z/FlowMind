@@ -7,7 +7,6 @@ from .models import TaskInstance, VerificationResult
 
 logger = logging.getLogger(__name__)
 
-
 class Verifier:
     def verify(self, task: TaskInstance, repo_path: str) -> VerificationResult:
         results = []
@@ -60,7 +59,7 @@ class Verifier:
 
 
 class RetryController:
-    """决定是否重试、如何重试。"""
+    """决定是否重试、如何重试。超时每次递增 50%。"""
 
     def should_retry(self, task: TaskInstance) -> bool:
         return (
@@ -68,19 +67,34 @@ class RetryController:
             and task.retry_count < task.max_retries
         )
 
+    def should_ask_pm(self, task: TaskInstance) -> bool:
+        """retry_count ≥ max_retries 后交由 PM 决策。"""
+        return task.retry_count >= task.max_retries
+
+    def select_timeout(self, task: TaskInstance) -> int:
+        """每次重试增加 50% 超时时间，上限 300s。"""
+        base_timeout = task.contract.get("timeout_seconds", 120)
+        escalated = int(base_timeout * (1.5 ** task.retry_count))
+        return min(escalated, 300)
+
     def plan_retry(self, task: TaskInstance,
                    verification: VerificationResult) -> dict:
         error_detail = "; ".join(
             c["output"][:200]
             for c in verification.checks if not c["passed"]
         )
+        timeout = self.select_timeout(task)
+
         enriched_instruction = (
             f"{task.contract.get('instruction', '')}\n\n"
             f"[校验反馈 - 第 {task.retry_count + 1} 次重试]\n"
-            f"{error_detail}"
+            f"以下检查未通过：{error_detail}\n\n"
+            f"请修正这些问题。"
         )
+
         return {
             "action": "rollback_and_retry",
             "rollback_to": task.contract.get("base_commit", ""),
             "updated_instruction": enriched_instruction,
+            "timeout_seconds": timeout,
         }

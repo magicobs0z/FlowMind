@@ -12,12 +12,36 @@ class Event:
     data: dict = field(default_factory=dict)
 
 
+class _StreamCapture:
+    """捕获 LLM 流式输出，通过 EventBus 实时发布文本块。"""
+
+    def __init__(self, event_bus=None):
+        self.event_bus = event_bus
+        self._text = ""
+
+    def update(self, text, final=False):
+        """Coder 每次有增量输出时调用此方法。text 是累计的完整内容。"""
+        self._text = text
+        if self.event_bus:
+            from types import SimpleNamespace
+            ev = SimpleNamespace(
+                event_type="worker.stream_chunk",
+                dag_id="flow",
+                node_id="",
+                event_id="",
+                timestamp=None,
+                data={"text": text, "final": final, "length": len(text)},
+            )
+            self.event_bus.publish_sync(ev)
+
+
 class HeadlessIO(InputOutput):
     """无头 IO：替换所有终端交互为结构化事件采集。"""
 
-    def __init__(self, events: List[Event] = None, **kwargs):
+    def __init__(self, events: List[Event] = None, event_bus=None, **kwargs):
         self.events = events or []
         self.last_assistant_content = None
+        self._stream_capture = _StreamCapture(event_bus)
 
         kwargs.setdefault("fancy_input", False)
         kwargs.setdefault("pretty", False)
@@ -79,7 +103,8 @@ class HeadlessIO(InputOutput):
         pass
 
     def get_assistant_mdstream(self):
-        return None
+        """返回增量流对象而非 None，使 coder 在流式模式下能实时推送文本。"""
+        return self._stream_capture
 
     def append_chat_history(self, text, linebreak=False, blockquote=False, strip=True):
         pass

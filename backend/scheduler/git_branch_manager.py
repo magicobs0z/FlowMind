@@ -16,7 +16,6 @@ class GitBranchManager:
         branch_name = f"scheduler/{dag_id}/{node_id}"
         repo = Repo(self.repo_path)
         try:
-            # 先尝试直接 checkout（分支已存在的情况）
             repo.git.checkout(branch_name)
             if base_commit:
                 repo.git.reset("--hard", base_commit)
@@ -24,26 +23,20 @@ class GitBranchManager:
         except git.GitCommandError:
             pass
 
-        # 分支不存在，创建新分支
         try:
             if base_commit:
-                # 从指定 commit 创建分支
                 repo.git.checkout(base_commit)
                 repo.git.checkout("-b", branch_name)
             elif repo.head.is_valid():
-                # 从当前 HEAD 创建分支
                 repo.git.checkout("-b", branch_name)
             else:
-                # 极边缘情况：没有任何 valid commit，创建空分支
                 repo.git.checkout("--orphan", branch_name)
                 repo.git.rm("-rf", "--cached", ".", recurse_submodules=True)
             return branch_name
         except git.GitCommandError as e:
-            # 分支创建完全失败，返回空字符串（上层跳过 git 操作）
             return ""
 
     def _branch_exists(self, branch_name: str) -> bool:
-        """检查分支是否存在。"""
         repo = Repo(self.repo_path)
         try:
             repo.git.rev_parse("--verify", f"refs/heads/{branch_name}")
@@ -111,7 +104,6 @@ class GitBranchManager:
         if not diff_text.strip():
             return None
         if not branch_name:
-            # 分支创建失败，跳过 git 操作
             return None
 
         repo = Repo(self.repo_path)
@@ -122,18 +114,20 @@ class GitBranchManager:
 
         try:
             if not self._branch_exists(branch_name):
-                # 分支不存在，跳过 git 操作
                 return None
             repo.git.checkout(branch_name)
 
-            # 尝试 git apply
+            # P1-1: 使用 git apply 直接应用 diff
             try:
-                repo.git.apply("--allow-empty", _in=diff_text)
+                repo.git.apply("--allow-empty", "--reject", _in=diff_text)
                 repo.git.add("-A")
-                commit_sha = repo.index.commit("apply aider worker diff").hexsha
-                return commit_sha
-            except git.GitCommandError:
-                # Fallback: text-based file extraction
+                if repo.index.diff("HEAD") or repo.index.diff("--cached"):
+                    commit_sha = repo.index.commit("apply aider worker diff").hexsha
+                    return commit_sha
+                else:
+                    return repo.head.commit.hexsha
+            except git.GitCommandError as e:
+                # Fallback: 解析 diff 并直接写文件
                 return self._apply_diff_fallback(repo, diff_text, branch_name)
         finally:
             if current is not None:
@@ -146,55 +140,63 @@ class GitBranchManager:
                               branch_name: str) -> str | None:
         """git apply 失败时通过文本解析直接写文件。"""
         import re
+        
         current_files = []
         current_content = []
         writing = False
+        in_hunk = False
+        current_file = None
+        
         for line in diff_text.split("\n"):
-            m = re.match(r'^\+\+\+ b/(.+)', line)
+            m = re.match(r'^\+\+\+\s+b/(.+)', line)
             if m:
-                if writing and current_files:
-                    fpath = os.path.join(self.repo_path, current_files[-1])
+                if writing and current_file:
+                    fpath = os.path.join(self.repo_path, current_file)
                     os.makedirs(os.path.dirname(fpath), exist_ok=True)
                     content = "\n".join(current_content)
-                    with open(fpath, "w") as f:
+                    with open(fpath, "w", encoding="utf-8") as f:
                         f.write(content)
-                current_files = [m.group(1)]
+                
+                current_file = m.group(1).strip()
                 current_content = []
                 writing = True
+                in_hunk = False
                 continue
 
-            if not writing:
+            if not writing or not current_file:
                 continue
 
-            if line.startswith("--- "):
-                continue
-            if line.startswith("diff --git"):
-                continue
-            if line.startswith("index "):
-                continue
-            if line.startswith("new file"):
-                continue
-            if line.startswith("deleted file"):
+            if line.startswith("@@"):
+                in_hunk = True
                 continue
 
-            if line.startswith("+"):
-                current_content.append(line[1:])
-            elif line.startswith("-"):
-                pass
-            else:
-                current_content.append(line)
+            if line.startswith("--- ") or line.startswith("diff --git") or \
+               line.startswith("index ") or line.startswith("new file") or \
+               line.startswith("deleted file"):
+                continue
 
-        if writing and current_files:
-            fpath = os.path.join(self.repo_path, current_files[-1])
+            if in_hunk:
+                if line.startswith("+"):
+                    current_content.append(line[1:])
+                elif line.startswith("-"):
+                    pass
+                else:
+                    current_content.append(line)
+
+        if writing and current_file:
+            fpath = os.path.join(self.repo_path, current_file)
             os.makedirs(os.path.dirname(fpath), exist_ok=True)
             content = "\n".join(current_content)
-            with open(fpath, "w") as f:
+            with open(fpath, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        if current_files:
+        if current_file:
             repo.git.add("-A")
-            sha = repo.index.commit("apply aider worker diff (fallback)").hexsha
-            return sha
+            if repo.index.diff("HEAD") or repo.index.diff("--cached"):
+                sha = repo.index.commit("apply aider worker diff (fallback)").hexsha
+                return sha
+            else:
+                return repo.head.commit.hexsha
         return None
 
     def _detect_conflicts(self, repo: Repo) -> list[str]:

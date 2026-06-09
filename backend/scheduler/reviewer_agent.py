@@ -35,7 +35,7 @@ REVIEW_SYSTEM_PROMPT = """你是一名代码审查员，被项目经理 Flow 临
 
 
 class ReviewerAgent:
-    def __init__(self, model_name: str = "openai/GLM-4.7-Flash"):
+    def __init__(self, model_name: str = "openai/GLM-4-Flash-250414"):
         self.model_name = model_name
 
     async def review(self, diff: str, task_context: dict,

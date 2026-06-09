@@ -1,4 +1,5 @@
 import asyncio
+import queue as _thread_queue
 import uuid
 from datetime import datetime, timezone
 from typing import AsyncIterator
@@ -15,6 +16,9 @@ class EventBus:
         self._lock = asyncio.Lock()
         self._persistence = None  # 由 SchedulerCore 注入
         self._notification = None  # 由 SchedulerCore 注入
+        # 线程安全桥接：worker 线程 → async 事件循环
+        self._thread_queue: _thread_queue.Queue = _thread_queue.Queue()
+        self._bridge_task: asyncio.Task | None = None
 
     def set_persistence(self, persistence):
         """注入持久化服务。"""
@@ -23,6 +27,33 @@ class EventBus:
     def set_notification(self, notification):
         """注入通知服务。"""
         self._notification = notification
+
+    # ── 线程安全桥接 ──────────────────────────────────────
+
+    def start_bridge(self):
+        """启动后台桥接任务，将 worker 线程中的事件转移到 async 队列。"""
+        if self._bridge_task is None:
+            self._bridge_task = asyncio.create_task(self._bridge_events())
+            self._bridge_task.set_name("eventbus-thread-bridge")
+
+    def publish_sync(self, event: SchedulerEvent):
+        """线程安全版本 — 可从 worker 线程调用，不阻塞。"""
+        if not event.timestamp:
+            event.timestamp = datetime.now(timezone.utc)
+        if not event.event_id:
+            event.event_id = f"{event.event_type}_{uuid.uuid4().hex[:8]}"
+        self._thread_queue.put(event)
+
+    async def _bridge_events(self):
+        """将 _thread_queue 中的事件搬运到 async 队列。"""
+        while True:
+            try:
+                while True:
+                    event = self._thread_queue.get_nowait()
+                    await self.publish(event)
+            except _thread_queue.Empty:
+                pass
+            await asyncio.sleep(0.05)  # 20Hz 轮询
 
     async def publish(self, event: SchedulerEvent):
         if not event.timestamp:
@@ -99,12 +130,12 @@ class EventBus:
             data=extra,
         ))
 
-    async def task_started(self, dag_id: str, node_id: str, worker_id: str = ""):
+    async def task_started(self, dag_id: str, node_id: str, worker_id: str = "", agent_role: str = ""):
         await self.publish(SchedulerEvent(
             event_type="task.started",
             dag_id=dag_id,
             node_id=node_id,
-            data={"worker_id": worker_id},
+            data={"worker_id": worker_id, "agent_role": agent_role},
         ))
 
     async def task_failed(self, dag_id: str, node_id: str, error: str = ""):
@@ -233,4 +264,42 @@ class EventBus:
             event_type="dag.resumed",
             dag_id=dag_id,
             data={"resolution": resolution},
+        ))
+
+    # ── MCP / Skill / Rule 事件 ──────────────────────────
+
+    async def mcp_tool_called(self, dag_id: str, server_name: str,
+                               tool_name: str, result: dict):
+        await self.publish(SchedulerEvent(
+            event_type="capability.mcp_tool_called",
+            dag_id=dag_id,
+            data={
+                "server_name": server_name,
+                "tool_name": tool_name,
+                "success": "error" not in result,
+            },
+        ))
+
+    async def skill_executed(self, dag_id: str, skill_name: str,
+                              success: bool, result: dict = None):
+        await self.publish(SchedulerEvent(
+            event_type="capability.skill_executed",
+            dag_id=dag_id,
+            data={
+                "skill_name": skill_name,
+                "success": success,
+                "result": result or {},
+            },
+        ))
+
+    async def rule_triggered(self, dag_id: str, rule_id: str,
+                              rule_name: str, action: str):
+        await self.publish(SchedulerEvent(
+            event_type="capability.rule_triggered",
+            dag_id=dag_id,
+            data={
+                "rule_id": rule_id,
+                "rule_name": rule_name,
+                "action": action,
+            },
         ))

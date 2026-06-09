@@ -347,33 +347,51 @@ async def _generate_report(scheduler, dag_id: str, submit_result: dict,
             print(f"  [{ms.status}] {ms.title} — {ms.progress*100:.0f}% "
                   f"({len(ms.tasks)} 任务)")
 
-    # 产物检查
+    # 产物检查 — 基于 git diff 自动发现新增/修改的文件
     print(f"\n产物检查:")
-    backend_files = [
-        os.path.join(REPO_PATH, "backend", "main.py"),
-        os.path.join(REPO_PATH, "backend", "auth.py"),
-        os.path.join(REPO_PATH, "backend", "models.py"),
-        os.path.join(REPO_PATH, "backend", "requirements.txt"),
-    ]
-    frontend_files = [
-        os.path.join(REPO_PATH, "frontend", "package.json"),
-        os.path.join(REPO_PATH, "frontend", "src", "App.jsx"),
-        os.path.join(REPO_PATH, "frontend", "src", "pages", "Login.jsx"),
-        os.path.join(REPO_PATH, "frontend", "src", "pages", "Register.jsx"),
-        os.path.join(REPO_PATH, "frontend", "src", "App.css"),
-    ]
+    try:
+        from git import Repo as GitRepo
+        repo_obj = GitRepo(REPO_PATH)
+        if repo_obj.head.is_valid():
+            diff_base = state.base_commit if state and state.base_commit else "HEAD~1"
+            try:
+                changed_files = repo_obj.git.diff("--name-status", diff_base, "HEAD").strip()
+            except Exception:
+                changed_files = ""
+        else:
+            changed_files = ""
+    except Exception:
+        changed_files = ""
 
-    all_files = backend_files + frontend_files
     found = []
     missing = []
-    for f in all_files:
-        if os.path.exists(f):
-            size = os.path.getsize(f)
-            found.append((f, size))
-            print(f"  ✅ {f.replace(REPO_PATH, '')} ({size} bytes)")
-        else:
-            missing.append(f)
-            print(f"  ❌ {f.replace(REPO_PATH, '')} (未生成)")
+    if changed_files:
+        for line in changed_files.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                status = parts[0]
+                fpath = parts[-1]
+                full = os.path.join(REPO_PATH, fpath)
+                if os.path.exists(full):
+                    size = os.path.getsize(full)
+                    found.append((full, size, status))
+                    print(f"  [{status}] {fpath} ({size} bytes)")
+                else:
+                    missing.append(fpath)
+                    print(f"  [D] {fpath} (已删除)")
+    else:
+        # Fallback: 扫描 repo 目录下所有非 .git 文件
+        for root, dirs, files in os.walk(REPO_PATH):
+            dirs[:] = [d for d in dirs if d != ".git" and d != "__pycache__"]
+            for f in files:
+                full = os.path.join(root, f)
+                rel = os.path.relpath(full, REPO_PATH)
+                size = os.path.getsize(full)
+                found.append((full, size, "?"))
+                print(f"  [A] {rel} ({size} bytes)")
 
     # 时间线
     print()
@@ -390,9 +408,9 @@ async def _generate_report(scheduler, dag_id: str, submit_result: dict,
             print("  ⚠ DAG 被阻塞（部分节点失败）")
         else:
             print(f"  ❌ DAG 状态: {state.status}")
-    print(f"  📁 产物: {len(found)}/{len(all_files)} 文件生成")
+    print(f"  📁 产物: {len(found)} 个文件（git diff 扫描）")
     if missing:
-        print(f"  ⚠ 未生成: {', '.join(os.path.basename(m) for m in missing)}")
+        print(f"  ⚠ 已删除: {', '.join(os.path.basename(m) for m in missing)}")
     print(f"  ⏱ 总耗时: {planning_time + execution_time:.1f}s")
     print(f"  💰 费用: ${scheduler.get_cost_report(dag_id).total_cost_usd:.4f}" if dag_id else "")
     print("=" * 80)

@@ -155,6 +155,8 @@ class TaskDAG:
     base_commit: str = ""
     nodes: list[TaskNode] = field(default_factory=list)
     parallel_policy: str = "max"
+    # 原始需求上下文（注入到 Engineer 提示词中）
+    requirement_context: str = ""
 
 
 @dataclass
@@ -194,6 +196,8 @@ class DagState:
     nodes: dict[str, TaskInstance] = field(default_factory=dict)
     merge_branch: str = ""
     status: str = "running"
+    # 原始需求上下文
+    requirement_context: str = ""
 
 
 @dataclass
@@ -224,7 +228,7 @@ class AgentContract:
     repo_path: str = ""  # 本地仓库路径
     base_commit: str = ""
     branch_name: str = ""
-    model_name: str = "openai/GLM-4.7-Flash"
+    model_name: str = "openai/GLM-4-Flash-250414"
     auto_lint: bool = False
     lint_command: str = ""
     auto_test: bool = False
@@ -233,6 +237,9 @@ class AgentContract:
     permissions: NodePermissions = field(default_factory=NodePermissions)
     validation: list[ValidationRule] = field(default_factory=list)
     allow_interrupt: bool = True  # Worker 遇到边界时是否允许触发中断
+    # 上下文管理
+    retain_state: bool = False    # 是否跨调用保留 sandbox/coder
+    session_id: str = ""          # 用于恢复会话的标识
 
 
 @dataclass
@@ -337,3 +344,40 @@ class KnowledgeDoc:
     content: str
     tags: list[str] = field(default_factory=list)
     source: str = ""
+
+
+# ── MCP / Skill / Rule 配置 ────────────────────────────
+
+@dataclass
+class MCPServerConfig:
+    name: str
+    endpoint: str
+    enabled: bool = True
+    tools: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SkillConfig:
+    name: str
+    description: str
+    prompt_template: str = ""
+    tags: list[str] = field(default_factory=list)
+    enabled: bool = True
+
+
+@dataclass
+class RuleConfig:
+    rule_id: str
+    name: str
+    description: str = ""
+    condition: dict = field(default_factory=dict)
+    action: str = "block"
+    priority: int = 0
+    enabled: bool = True
+
+
+@dataclass
+class CapabilityConfig:
+    mcp_servers: list[MCPServerConfig] = field(default_factory=list)
+    skills: list[SkillConfig] = field(default_factory=list)
+    rules: list[RuleConfig] = field(default_factory=list)

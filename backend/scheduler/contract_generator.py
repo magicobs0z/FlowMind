@@ -11,9 +11,9 @@ class ContractGenerator:
     """契约生成器 — 将 DAG 节点转化为 Agent 可执行的结构化契约。"""
 
     MODEL_MAP = {
-        "fast": "openai/GLM-4-FlashX",
-        "strong": "openai/GLM-4-Plus",
-        "review": "openai/GLM-4-AirX",
+        "fast": "openai/GLM-4-Flash-250414",
+        "strong": "openai/GLM-4-Flash-250414",
+        "review": "openai/GLM-4-Flash-250414",
     }
 
     def generate(self, task: TaskInstance, dag_state: DagState,
@@ -29,6 +29,17 @@ class ContractGenerator:
                 f"{system_prompt}\n\n"
                 f"[角色约束]\n{role_fragment}"
             ).strip()
+
+        # P1-2: 为测试节点默认启用测试
+        auto_test_enabled = task.contract.get("auto_test", False)
+        auto_lint_enabled = task.contract.get("auto_lint", False)
+        if role == AgentRole.TESTER:
+            auto_test_enabled = task.contract.get("auto_test", True)
+            auto_lint_enabled = task.contract.get("auto_lint", True)
+            if not task.contract.get("test_command", ""):
+                task.contract["test_command"] = "python -m pytest -v --tb=short"
+            if not task.contract.get("lint_command", ""):
+                task.contract["lint_command"] = "flake8 . --max-line-length=120"
 
         # 构建权限结构
         # ENGINEER 角色且没有指定文件时，自动允许创建新文件
@@ -51,7 +62,7 @@ class ContractGenerator:
                 "allowed_operations", ["edit"])
         permissions = NodePermissions(
             allowed_operations=allowed_ops,
-            allow_new_files=task.contract.get("allow_new_files", True) if (role == AgentRole.ENGINEER and not output_files) else task.contract.get("allow_new_files", False),
+            allow_new_files=(role == AgentRole.ENGINEER),
             allow_shell_commands=task.contract.get(
                 "allow_shell_commands", False),
             allowed_shell_patterns=task.contract.get(
@@ -60,18 +71,24 @@ class ContractGenerator:
 
         # 构建校验规则列表
         validation: list[ValidationRule] = []
-        if task.contract.get("auto_lint", False):
+        if auto_lint_enabled:
             validation.append(ValidationRule(
                 type="lint", name="lint",
                 command=task.contract.get("lint_command", ""),
                 fail_message="Lint 检查未通过",
             ))
-        if task.contract.get("auto_test", False):
+        if auto_test_enabled:
             validation.append(ValidationRule(
                 type="test", name="test",
                 command=task.contract.get("test_command", ""),
                 fail_message="测试未通过",
             ))
+
+        # 上下文管理：工程类任务保留状态
+        _retain_roles = {AgentRole.ENGINEER, AgentRole.TESTER}
+        retain = role in _retain_roles
+        # 使用 dag_id:node_id 作为 session_id，确保同一节点复用同一会话
+        session = f"{task.dag_id}:{task.node_id}" if retain else ""
 
         return AgentContract(
             contract_id=f"ct_{uuid.uuid4().hex[:12]}",
@@ -89,14 +106,17 @@ class ContractGenerator:
             base_commit=self._resolve_base(task, dag_state),
             branch_name=task.branch_name,
             model_name=self._select_model(task),
-            auto_lint=task.contract.get("auto_lint", False),
+            auto_lint=auto_lint_enabled,
             lint_command=task.contract.get("lint_command", ""),
-            auto_test=task.contract.get("auto_test", False),
+            auto_test=auto_test_enabled,
             test_command=task.contract.get("test_command", ""),
             # Human-in-the-loop 字段
             permissions=permissions,
             validation=validation,
             allow_interrupt=True,
+            # 上下文管理
+            retain_state=retain,
+            session_id=session,
         )
 
     def _resolve_role(self, task: TaskInstance) -> AgentRole:
@@ -131,10 +151,19 @@ class ContractGenerator:
 
     def build_worker_contract(self, agent_contract: AgentContract):
         from aider_worker import Contract
+        # 把目标文件路径注入 instruction，让 LLM 知道该写到哪个路径
+        instruction = agent_contract.instruction
+        files = agent_contract.output_files
+        if files:
+            instruction = (
+                f"{instruction}\n\n"
+                f"【目标文件路径 — 必须使用以下路径创建文件】\n"
+                + "\n".join(f"  - {f}" for f in files)
+            )
         return Contract(
             model_name=agent_contract.model_name,
             api_key_env_var="",
-            instruction=agent_contract.instruction,
+            instruction=instruction,
             system_prompt_extra=agent_contract.system_prompt_extra,
             repo_url=agent_contract.repo_url,
             repo_path=agent_contract.repo_path,
@@ -152,4 +181,9 @@ class ContractGenerator:
             allow_new_files=agent_contract.permissions.allow_new_files,
             allow_shell_commands=agent_contract.permissions.allow_shell_commands,
             allowed_shell_patterns=agent_contract.permissions.allowed_shell_patterns,
+            # 上下文管理
+            retain_state=agent_contract.retain_state,
+            session_id=agent_contract.session_id,
+            # TodoService 集成
+            task_id=agent_contract.task_id,
         )

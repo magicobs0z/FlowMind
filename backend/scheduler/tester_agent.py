@@ -44,9 +44,9 @@ class TesterAgent:
         passed = all(r["passed"] for r in results)
         return {"passed": passed, "checks": results}
 
-    def generate_regression_tests(self, task: TaskInstance,
-                                  repo_path: str,
-                                  worker_pool=None) -> dict:
+    async def generate_regression_tests(self, task: TaskInstance,
+                                      repo_path: str,
+                                      worker_pool=None) -> dict:
         files = task.contract.get("files", [])
         if not files or not worker_pool:
             return {"generated": False, "reason": "no files or worker pool"}
@@ -71,26 +71,20 @@ class TesterAgent:
             dag_id=task.dag_id,
             instruction=instruction,
             context_files=list(files),
-            output_files=[],
+            output_files=[],  # 测试文件是新文件，不提前指定路径（指令中包含路径）
             repo_url=task.contract.get("repo_url", ""),
             base_commit=task.contract.get("base_commit", ""),
-            model_name="openai/GLM-4.7-Flash",
+            model_name="openai/GLM-4-Flash-250414",
             max_reflections=2,
             timeout_seconds=120,
         )
 
         try:
-            import asyncio
             cg = ContractGenerator()
             worker_ct = cg.build_worker_contract(contract)
-            handle = None
+            handle = await worker_pool.acquire(contract, timeout=15)
             try:
-                handle = asyncio.get_event_loop().run_until_complete(
-                    worker_pool.acquire(contract, timeout=15)
-                )
-                result = asyncio.get_event_loop().run_until_complete(
-                    worker_pool.dispatch(handle, contract)
-                )
+                result = await worker_pool.dispatch(handle, contract)
                 if result.get("success"):
                     return {
                         "generated": True,
@@ -101,10 +95,7 @@ class TesterAgent:
                     }
                 return {"generated": False, "reason": result.get("error_message", "")}
             finally:
-                if handle:
-                    asyncio.get_event_loop().run_until_complete(
-                        worker_pool.release(handle.worker_id)
-                    )
+                await worker_pool.release(handle.worker_id)
         except Exception as e:
             logger.warning("test generation failed for %s: %s", task.node_id, e)
             return {"generated": False, "reason": str(e)}

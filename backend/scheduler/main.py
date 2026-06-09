@@ -23,6 +23,8 @@ def create_app(repo_path: str = "",
     from .api import create_router, websocket_handler
     from .scheduler_core import SchedulerCore
     from .auth import AuthMiddleware
+    from .user_service import UserService
+    from .model_manager import ModelManager
     from .metrics import get_metrics, setup_metrics
 
     scheduler = SchedulerCore(
@@ -33,21 +35,40 @@ def create_app(repo_path: str = "",
         db_path=db_path,
     )
 
+    # 注入可选服务（账户 + 模型管理）
+    user_service = UserService()
+    model_manager = ModelManager()
+    scheduler._user_service = user_service
+    scheduler._model_manager = model_manager
+    logger.info("user_service and model_manager injected into scheduler")
+
     app = FastAPI(
         title="FlowMind Multi-Agent Scheduler",
-        version="0.1.0",
+        version="0.2.0",
         description="多智能体调度中心 — 确定性逻辑核心",
     )
 
+    # CORS — 生产环境通过 CORS_ORIGINS 环境变量配置
+    cors_origins_str = os.environ.get(
+        "CORS_ORIGINS",
+        os.environ.get("FLOWMIND_CORS_ORIGINS", "*"),
+    )
+    cors_origins = (
+        ["*"]
+        if cors_origins_str == "*"
+        else [o.strip() for o in cors_origins_str.split(",") if o.strip()]
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    if cors_origins != ["*"]:
+        logger.info("CORS restricted to: %s", cors_origins)
 
-    # 认证中间件
+    # 认证中间件（注册/登录端点已加入 PUBLIC_PATHS）
     app.add_middleware(AuthMiddleware)
 
     # 限流中间件
@@ -69,7 +90,7 @@ def create_app(repo_path: str = "",
     async def health():
         return {
             "status": "ok",
-            "version": "0.1.0",
+            "version": "0.2.0",
             "dags_active": len(scheduler.get_all_dags()),
         }
 

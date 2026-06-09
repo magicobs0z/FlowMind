@@ -1,6 +1,6 @@
-﻿# FlowMind 系统交接文档
+# FlowMind 系统交接文档
 
-> **交接日期**: 2026-06-08
+> **交接日期**: 2026-06-09
 > **项目根目录**: `/d/AI/FlowMind-V2`
 > **项目代码**: `FlowMind/`（Git 仓库，远程: `https://github.com/magicobs0z/FlowMind.git` main 分支）
 > **原仓库存档**: `archive-original` 分支
@@ -15,36 +15,37 @@
 
 | # | 文件 | 为什么读 |
 |---|------|----------|
-| 1 | [FlowMind/docs/architecture.md](file:///d:/AI/FlowMind-V2/FlowMind/docs/architecture.md) | 项目目录结构、架构分层、核心流程、依赖说明 |
-| 2 | [FlowMind/docs/fix-plan.md](file:///d:/AI/FlowMind-V2/FlowMind/docs/fix-plan.md) | 当前已知问题分级（P0/P1/P2）+ 修复方案 + 测试标准 |
-| 3 | [FlowMind/backend/scheduler/planning_agent.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/scheduler/planning_agent.py) | FlowAgent — 需求拆解 + DAG 规划的核心逻辑 |
+| 1 | [docs/01_flowagent_architecture.md](file:///d:/AI/FlowMind-V2/docs/01_flowagent_architecture.md) | **全面架构文档**：FlowAgent 设计原则、架构图、聊天检测、短期记忆、复杂度评估、流式输出、线程安全桥接 |
+| 2 | [docs/quickstart.md](file:///d:/AI/FlowMind-V2/docs/quickstart.md) | **快速入门**：环境配置、TUI 测试、Python 脚本、核心概念 |
+| 3 | [FlowMind/backend/scheduler/planning_agent.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/scheduler/planning_agent.py) | FlowAgent — 聊天检测 + 需求拆解 + DAG 规划的核心逻辑 |
 | 4 | [FlowMind/backend/scheduler/scheduler_core.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/scheduler/scheduler_core.py) | SchedulerCore — DAG 执行引擎 |
-| 5 | [FlowMind/backend/aider_worker/worker.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/aider_worker/worker.py) | AiderWorker — 代码生成 Worker 实现 |
+| 5 | [FlowMind/backend/aider_worker/worker.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/aider_worker/worker.py) | AiderWorker — 代码生成 Worker 实现 + 线程事件发布 |
 
-### 第二梯队 — 理解测试入口
+### 第二梯队 — 理解测试入口 & 关键机制
 
 | # | 文件 | 说明 |
 |---|------|------|
-| 6 | [scripts/run_demo_login.py](file:///d:/scripts/run_demo_login.py) | 主 E2E 测试脚本（每次修复后运行此脚本验证） |
-| 7 | [FlowMind/backend/scheduler/contract_generator.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/scheduler/contract_generator.py) | DAG 节点 → Contract 的角色/提示词组装 |
-| 8 | [FlowMind/backend/aider_worker/headless_coder.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/aider_worker/headless_coder.py) | 无头 Coder 封装（覆写关键方法） |
-| 9 | [FlowMind/backend/aider_worker/headless_io.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/aider_worker/headless_io.py) | 无头 IO 模拟（自动确认所有操作） |
+| 6 | [docs/handover.md](file:///d:/AI/FlowMind-V2/docs/handover.md) | **本文档**：交接说明、待办任务优先级 |
+| 7 | [scripts/tui_test.py](file:///d:/AI/FlowMind-V2/scripts/tui_test.py) | **流式 TUI 测试工具**（交互式测试 Agent 能力，推荐入口） |
+| 8 | [FlowMind/backend/scheduler/event_bus.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/scheduler/event_bus.py) | EventBus — 线程安全事件桥接 + 流式事件发布 |
+| 9 | [FlowMind/backend/aider_worker/headless_io.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/aider_worker/headless_io.py) | HeadlessIO — _StreamCapture 流式 LLM 输出捕获 |
+| 10 | [FlowMind/backend/scheduler/contract_generator.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/scheduler/contract_generator.py) | DAG 节点 → Contract 的角色/提示词组装 |
+| 11 | [FlowMind/backend/aider_worker/headless_coder.py](file:///d:/AI/FlowMind-V2/FlowMind/backend/aider_worker/headless_coder.py) | 无头 Coder 封装（覆写关键方法） |
 
 ### 第三梯队 — 理解已被修改的底层库
 
 | # | 文件 | 修改内容 |
 |---|------|----------|
-| 10 | [FlowMind/aider/coders/editblock_coder.py](file:///d:/AI/FlowMind-V2/FlowMind/aider/coders/editblock_coder.py) | SEARCH/REPLACE 解析器容错（允许缺少 `=======`） |
-| 11 | [FlowMind/aider/coders/editblock_prompts.py](file:///d:/AI/FlowMind-V2/FlowMind/aider/coders/editblock_prompts.py) | 移除"询问文件"指令 |
+| 12 | [FlowMind/aider/coders/editblock_coder.py](file:///d:/AI/FlowMind-V2/FlowMind/aider/coders/editblock_coder.py) | SEARCH/REPLACE 解析器容错（允许缺少 `=======`） |
+| 13 | [FlowMind/aider/coders/editblock_prompts.py](file:///d:/AI/FlowMind-V2/FlowMind/aider/coders/editblock_prompts.py) | 移除"询问文件"指令 |
 
 ### 第四梯队 — 参考
 
 | # | 文件 | 说明 |
 |---|------|------|
-| 12 | [docs/useful_modle.md](file:///d:/AI/FlowMind-V2/docs/useful_modle.md) | 免费 API 凭证（GLM-4-FlashX） |
-| 13 | [FlowMind/.env.bat](file:///d:/AI/FlowMind-V2/FlowMind/.env.bat) | 环境激活脚本 |
-| 14 | [docs/04_e2e_test_report.md](file:///d:/AI/FlowMind-V2/docs/04_e2e_test_report.md) | 历史测试报告 |
-| 15 | [demo_login/](file:///d:/AI/FlowMind-V2/demo_login) | 目标仓库（E2E 测试输出到此目录） |
+| 14 | [docs/useful_modle.md](file:///d:/AI/FlowMind-V2/docs/useful_modle.md) | 免费 API 凭证（GLM-4-FlashX） |
+| 15 | [FlowMind/.env.bat](file:///d:/AI/FlowMind-V2/FlowMind/.env.bat) | 环境激活脚本 |
+| 16 | [docs/04_e2e_test_report.md](file:///d:/AI/FlowMind-V2/docs/04_e2e_test_report.md) | 历史测试报告 |
 
 ---
 
@@ -54,12 +55,18 @@
 
 | 模块 | 状态 |
 |------|------|
-| FlowAgent（PM Agent） | ✅ 复杂度自检 + 双模式（简单/复杂） |
+| FlowAgent（PM Agent） | ✅ 聊天检测 + 复杂度自检 + 双模式（聊天/简单/复杂） |
+| 聊天/编码分类 | ✅ `_detect_chat()` 自动区分问候闲聊 vs 编码需求 |
+| 短期记忆（对话历史） | ✅ 自动注入最近 2 轮简短摘要，仅手动 reset 清空 |
+| 先讨论再行动 | ✅ 系统提示词重构，Agent 像 Claude 一样自然交互 |
 | DAG 解析器 | ✅ 拓扑排序 + 批次调度 |
-| AiderWorker | ✅ 沙箱隔离 + 代码生成 + diff 收集 |
+| AiderWorker | ✅ 沙箱隔离 + 代码生成 + diff 收集 + 文件同步回工作区 |
+| Agent 自然语言响应 | ✅ 从 `coder.partial_response_content` 提取 agent_message |
+| **流式 LLM 输出** | ✅ **实时捕获**：_StreamCapture → publish_sync() → TUI 实时渲染 |
 | Git 分支管理 | ✅ 任务分支 + diff 合并 + 链式提交 |
 | 持久化（SQLite） | ✅ 5 张表（tasks/milestones/contracts/events/tokens） |
-| 事件总线 | ✅ 7 种事件类型 |
+| **线程安全事件** | ✅ EventBus publish_sync() + 桥接任务 20Hz 轮询 |
+| 流式 TUI | ✅ Rich Live + AgentStreamDisplay（实时文本）+ 多 Agent 角色标签 |
 | 鉴权 | ✅ JWT + API Key（`FlowMind/backend/scheduler/auth.py`） |
 | 限流 | ✅ 滑动窗口（`rate_limiter.py`） |
 | 日志 | ✅ 结构化日志 + trace_id（`logging.py`） |
@@ -70,16 +77,14 @@
 ### 测试通过的功能
 
 - ✅ 导入验证：6 个核心模块全部可导入
-- ✅ DAG 调度：12 节点可完整执行，总耗时 ~75-118s
-- ✅ 代码生成：`data_model.py`（21行）+ `test_cases.py`（11行）
+- ✅ 聊天/编码自动分类
+- ✅ 流式 LLM 输出实时渲染
 
 ### 未解决的关键问题
 
-详见 [fix-plan.md](file:///d:/AI/FlowMind-V2/FlowMind/docs/fix-plan.md) 的完整列表，核心问题：
-
 | 问题 | 严重性 | 影响 |
 |------|--------|------|
-| BLueprint 阶段 PM 输出代码而非 JSON | P0 | DAG 靠规则兜底，质量差 |
+| Blueprint 阶段 PM 输出代码而非 JSON | P0 | DAG 靠规则兜底，质量差 |
 | LLM 输出格式不一致 | P0 | 70% 代码生成因格式失败 |
 | 上下文窗口不足 | P0 | 系统提示词吃掉大量 token |
 | 代码与需求不匹配 | P0 | 生成通用模型而非登录系统 |
@@ -109,7 +114,7 @@ $env:PYTHONPATH="FlowMind;FlowMind\backend"
 $env:OPENAI_API_KEY="c46843aa1f0947b39cdfd1fcb4564af4.HX72k6kchXRdywkn"
 $env:OPENAI_API_BASE="https://open.bigmodel.cn/api/paas/v4/"
 $env:PYTHONPATH="FlowMind;FlowMind\backend"
-python scripts/run_demo_login.py
+python scripts/tui_test.py
 ```
 
 ---
@@ -122,9 +127,9 @@ FlowMind/.git   ← Git 仓库根目录
 
 | 分支/Tag | 内容 | 说明 |
 |----------|------|------|
-| `main` | 当前项目代码 | 新架构（`FlowMind/` 内完整项目，无 `lib/`） |
-| `V1` | 锁定 main 当前 commit | 占位分支（与 main 同步，无 banner 提示） |
-| `v1-archive` (tag) | 原仓库存档 | 旧版本代码（含前端 + 原架构），从历史 commit 取回 |
+| `main` | 当前项目代码 | 新架构（`FlowMind/` 内完整项目） |
+| `V1` | 锁定 main 当前 commit | 占位分支（与 main 同步） |
+| `v1-archive` (tag) | 原仓库存档 | 旧版本代码，从历史 commit 取回 |
 
 ---
 
@@ -137,7 +142,7 @@ FlowMind/.git   ← Git 仓库根目录
 **具体步骤**：
 1. [ ] 在 `worker.py` 中让 PM 角色使用 `AskCoder` 或 `WholeFileCoder`（它们输出文字而非 SEARCH/REPLACE）
 2. [ ] 在 `contract_generator.py` 中增加 `CoderType` 字段，按角色选择 coder
-3. [ ] 运行 `python scripts/run_demo_login.py` 验证 PM 输出 JSON
+3. [ ] 运行 `python scripts/tui_test.py` 验证 PM 输出 JSON
 4. [ ] 检查 DAG 节点数量和文件路径质量
 
 ### 🥈 次优选择：修复 P0-1（LLM 输出格式）
@@ -163,20 +168,14 @@ FlowMind/.git   ← Git 仓库根目录
 每次修复后必须运行以下命令并确认结果：
 
 ```powershell
-# 清理旧数据
-Remove-Item -Force output\demo_login.db -ErrorAction SilentlyContinue
-Remove-Item -Force output\demo_login_e2e.log -ErrorAction SilentlyContinue
-
-# 运行测试
 $env:OPENAI_API_KEY="c46843aa1f0947b39cdfd1fcb4564af4.HX72k6kchXRdywkn"
 $env:OPENAI_API_BASE="https://open.bigmodel.cn/api/paas/v4/"
 $env:PYTHONPATH="FlowMind;FlowMind\backend"
-python scripts/run_demo_login.py
+python scripts/tui_test.py
 ```
 
 通过条件：
-- ✅ 12 节点全部 success
-- ✅ 至少 3 个 code 节点的 diff > 0
-- ✅ 生成文件与需求相关（不是通用 Product/Order）
-- ✅ 总耗时 < 180s
-- ✅ 无 `did not conform to the edit format` 错误
+- ✅ 纯聊天（你好）→ 自然回复，不触发编码
+- ✅ 简单编码 → 实时流式输出，正确生成文件
+- ✅ Token 始终显示 ↑输入 ↓输出
+- ✅ 无崩溃异常

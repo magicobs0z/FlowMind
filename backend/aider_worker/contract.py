@@ -34,6 +34,14 @@ class Contract:
 
     extra_params: Dict[str, str] = field(default_factory=dict)
 
+    # Coder 类型：默认 None 使用 HeadlessCoder（编辑模式），"ask" 使用 HeadlessAskCoder（只读问答）
+    coder_type: str = ""
+
+    # 上下文管理
+    retain_state: bool = False  # 是否保留 sandbox/coder 跨调用复用
+    session_id: str = ""        # 会话标识，用于恢复上下文
+    task_id: str = ""           # TodoService 任务 ID（{dag_id}:{node_id}），用于进度上报
+
     def validate_permissions(self, operation: str, target: str = "") -> tuple[bool, str]:
         """校验操作是否在契约权限范围内。
 
